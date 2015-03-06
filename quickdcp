@@ -1,0 +1,3741 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+#**************************************************************************
+# QuickDCP
+#
+# Copyright (C) 2015 Zanobox <jean.sabatier@zanobox.net>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License version 3
+# as published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see http://www.gnu.org/licenses/ 
+# or write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+#*************************************************************************/
+# Last modified: 5th March 2015
+
+## Remerciements
+# Thanks and acknoledgments go to Euan Freeman and other contributors of TintWizard 
+# which was a good help in using pygtk, and an inspiration for the first draft of 
+# quickdcp, when I knew nothing of python.
+
+# syslibs
+import os
+import io
+import sys
+import shutil
+import glob
+import subprocess
+import mimetypes
+# Regexp
+import re
+# grafx libs
+import glib
+import gobject
+import gtk
+import pango
+# other utilities
+import unicodedata
+import math
+import decimal
+#import random
+import datetime
+import time
+import signal
+import webbrowser
+#import urllib2
+#import smtplib
+
+
+# Project information
+NAME = u"QuickDCP"
+AUTHORS = [u"Zanobox <jean.sabatier@zanobox.net>"]
+QDCP_VERSION = u"2.0"
+COMMENTS = u"QuickDCP permet de générer rapidement de petits DCP, à l'usage des projectionnistes de cinéma numérique."
+WEBSITE = u"http://zanobox.net"
+
+# Some global variables
+CONFIG_VERSION = u"0.0"
+HOME_DIR = os.path.expandvars(u"${HOME}")
+QDCP_DIR = HOME_DIR + u"/quickDCP/"
+WORKSPACE = QDCP_DIR
+CONFIG_DIR = HOME_DIR + u"/.config/quickdcp/"
+CONFIG_FILE = CONFIG_DIR + u"qdcp.conf"
+CONFIG_SHELL = CONFIG_DIR + u"qdcp-shell-conf.sh"
+
+OUTPUTDIR = HOME_DIR + u"/DCP/"
+AUTOCLEAN = u"clean"
+archives = u"archives/"
+
+# Current status
+CUR_STATE = u"Rien à signaler"
+
+# Encoding of host system
+TERM_ENCODING = unicode(sys.stdout.encoding)
+FS_ENCODING = unicode(sys.getfilesystemencoding())
+
+# Multipurpose shell script
+SHELL_SCRIPT = HOME_DIR + u"/bin/quickdcp-funks.sh"	
+# make sure we have execution permission on shell script
+os.chmod(SHELL_SCRIPT, 0755)
+
+Prefs = {
+	'version' : QDCP_VERSION,
+	'format' : "Flat",
+	'resolution' : "2K",
+	'framerate' : '24',
+	'categorie' : "PSA",
+	'crtn_laps' : 10,
+	'crtn_fondu_d' : "noir",
+	'crtn_fondu_f' : "noir",
+	'crtn_fondulaps_d' : 24,
+	'crtn_fondulaps_f' : 24,
+	'crtn_fondu_cache_color' : "#000000",
+	'crtn_marge' : 60,
+	'crtn_gouttiere' : 60,
+	'crtn_background' : "#000000",
+	'crtn_text' : "off",
+	'crtn_font' : "Comfortaa-Regular",
+	'affiche_gravity' : "jardin",
+	'text_color' : "#ffffff",
+	'text_align' : "center",
+	'text_border' : "on",
+	'text_border_color' : "#ffffff",
+	'text_border_width' : 2,
+	'text_gravity' : "N-E",
+	'text_interline' : 20,
+	'logo' : "off",
+	'logo_file' : "mon_logo.png", 
+	'logo_path' : os.path.expandvars("${HOME}") + "/quickDCP/logos/",
+	'logo_w' : "auto",
+	'logo_h' : 100,
+	'logo_x' : "auto",
+	'logo_y' : "auto",
+	'logos_spe_h' : 70, 
+	'vid_framerate' : "inconnu",
+	'vid_format' : "inconnu",
+	'autoclean' : "wash",
+	'inputdir' : QDCP_DIR,
+	'outputdir' : HOME_DIR + "/DCP/",
+	'threads' : 4,
+	'issuer' : "QuickDCP",
+	'issuer_short' : "QDCP",
+	'debug_mode' : "off",
+	'odcp_logl' : "warn",
+	'ff_logl' : "warning",
+	'tif2j2k' : "opendcp",
+	'j2k2mxf' : "opendcp",
+	'show_terminal' : "on",
+}
+
+def writeGlobalShellConf():
+	"""Write some useful variable in .config directory"""
+	with open(CONFIG_SHELL, 'w') as f:
+		opt_list = ['version','autoclean',
+					'inputdir','outputdir',
+					'issuer','issuer_short',
+					'debug_mode','threads',
+					'ff_logl','odcp_logl',
+					'j2k2mxf','tif2j2k',
+					'logo_file','logo_path']
+		cont = '#!/bin/sh\n'
+		for var in sorted(opt_list):
+			cont += var + '=' + Prefs[var] + '\n'
+		cont += '\n# EOF\n'
+		f.write(cont)
+
+def max_dims(true_resol=False):
+	# dimensions du format (Flat/Scope) 
+	if Prefs['format'] == "Flat":
+		mx_width = 1998
+	else:
+		mx_width = 2048
+	if Prefs['format'] == "Scope":
+		mx_height = 858
+	else:
+		mx_height = 1080
+	if Prefs['format'] == "Full":
+		mx_width = 2048
+		mx_height = 1080	
+	if Prefs['format'] == "16/9":
+		mx_width = 1920
+		mx_height = 1080
+	return (mx_width, mx_height)
+
+mx_width, mx_height = max_dims()
+
+############ Classes and functions
+	    
+class Regexp():
+	look_img = re.compile('image')
+	look_aud = re.compile('audio')
+	look_vid = re.compile('video')
+	look_srt = re.compile('.srt$')
+
+class ShellProc(gtk.Table):
+	"""Execute, monitor in a textview and record in a log
+	 an asynchronous shell process"""
+
+	def __init__(self):
+		
+		gtk.Table.__init__(self)
+		self.resize(rows=2, columns=1)
+		self.set_homogeneous(False)
+		
+		# scrolled window (stdout)
+		sw = gtk.ScrolledWindow()
+		sw.set_size_request((mx_width/4)+10, (mx_height/4)-20)
+		sw.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+		self.attach(sw, 0,1,0,1, xoptions=gtk.FILL, yoptions=gtk.FILL)
+		
+		# progress bar
+		self.progress = gtk.ProgressBar()
+		self.attach(self.progress, 0,1,1,2, xoptions=gtk.FILL, yoptions=gtk.SHRINK)
+
+		# stdout text view
+		self.tw_out = gtk.TextView()
+		self.tw_out.set_editable(False)
+		self.tw_out.set_cursor_visible(False)
+		self.tw_out.set_wrap_mode(gtk.WRAP_WORD)
+
+		self.tw_err = gtk.TextView()
+		self.tw_err.set_editable(False)
+		self.tw_err.set_cursor_visible(False)
+				
+		sw.add_with_viewport(self.tw_out)
+
+		self.show_all
+        
+	def update_progress(self, data=None):
+		self.progress.pulse()
+		return True
+
+	def kill(self, widget, data=None):
+		os.kill(self.pid, signal.SIGTERM)
+
+	def process(self, data=None, bname='', cmd='', arg1='', arg2='', action='', term='on'):
+		
+		params = [str(SHELL_SCRIPT), cmd, bname, arg1, arg2]
+		self.bname = bname
+		self.action = action
+		self.show_all()
+		
+		def scroll_to_end(textview):
+			i = textview.props.buffer.get_end_iter()
+			textview.props.buffer.place_cursor(i)
+			mark = textview.props.buffer.get_insert()
+			textview.scroll_to_mark(mark, 0.0, True, 0.0, 1.0)
+			#~ textview.scroll_to_iter(i, 0.0, True, 0.0, 1.0)
+
+		def write_to_textview(io, condition, tw):
+			if condition is glib.IO_HUP:
+				glib.source_remove(self.source_id_out)
+				glib.source_remove(self.source_id_err)
+				return False
+			line = io.readline()
+			tw.props.buffer.insert_at_cursor(line)
+			scroll_to_end(tw)
+
+			while gtk.events_pending():
+				gtk.main_iteration_do(False)
+				io.flush()
+
+			return True
+		
+		self.pid, stdin, stdout, stderr = glib.spawn_async(params,
+			flags=glib.SPAWN_SEARCH_PATH|glib.SPAWN_DO_NOT_REAP_CHILD,                                       
+			standard_output=True,
+			standard_error=True)
+		
+		# texte dans la barre de progression
+		if cmd == 'conv_jpg2tif':
+			text = "création d'une image tiff"
+		elif cmd == 'multiply_tiff':
+			text = "multiplication des images"
+		elif cmd == 'conv_mov2tif':
+			text = "extraction des images"
+		elif cmd == 'conv_tif2j2k':
+			text = "conversion en jpeg2000"
+		elif cmd == 'conv_j2k2mxf':
+			text = "conversion en mxf"
+		elif cmd == 'mk_DCP':
+			text = "finalisation du DCP"
+		else:
+			text = cmd
+		self.progress.set_text(text)
+
+		# input/output watchers
+		io = glib.IOChannel(stdout)
+		err = glib.IOChannel(stderr)
+
+		self.source_id_out = io.add_watch(glib.IO_IN|glib.IO_HUP,
+									write_to_textview,
+									self.tw_out,
+									priority=glib.PRIORITY_HIGH)
+
+		self.source_id_err = err.add_watch(glib.IO_IN|glib.IO_HUP,
+									write_to_textview,
+									self.tw_err,
+									priority=glib.PRIORITY_HIGH)
+
+		timeout_id = glib.timeout_add(100, self.update_progress)
+			
+		def closure_func(pid, status, data):
+			#~ glib.spawn_close_pid(pid)
+			glib.source_remove(timeout_id)
+			self.progress.set_fraction(0.0)
+			write_buffer_in_log(self.bname)
+			qdcp.shellCallbacks(case=self.action, name=bname, result=status, retour=data)
+
+		def write_buffer_in_log(bname):
+			log_file = WORKSPACE + '.shell_logs/' + bname + '.log'
+			if not os.path.isdir(WORKSPACE + '.shell_logs'):
+				os.makedirs(WORKSPACE + '.shell_logs')
+				
+			f = open(log_file, 'a')
+			
+			# log stdout
+			buffy = self.tw_out.get_buffer()
+			a = buffy.get_start_iter()
+			z = buffy.get_end_iter()
+			f.write(buffy.get_text(a,z))
+			
+			# log stderr
+			buffy = self.tw_err.get_buffer()
+			a = buffy.get_start_iter()
+			z = buffy.get_end_iter()
+			errtext = buffy.get_text(a,z)
+			if len(errtext) > 0:
+				now = datetime.datetime.now()
+				errtext = "\n-----v--SORTIE D'ERREUR--v------- " + str(now) + "\n" + errtext
+				self.tw_out.get_buffer().insert_at_cursor(errtext)
+				f.write(errtext)
+				warningDialog(msg=errtext)
+			f.close()
+
+		glib.child_watch_add(self.pid, closure_func, None)
+
+
+class QdcpGUI(gtk.Window):
+	"""One window to rule them all."""
+
+	def main(self):
+		"""Enters the main loop."""
+		gtk.main()
+
+	def quit(self, widget=None, event=None):
+		"""Destroys the window and quits."""
+		self.destroy()
+		sys.exit()
+
+	######## Window Init
+				
+	def __init__(self):
+		"""Create, populate and show the main window."""
+		
+		############# Create top-level window
+		gtk.Window.__init__(self, gtk.WINDOW_TOPLEVEL)
+		self.set_size_request(1000, 600)
+		self.set_title(u"QuickDCP")
+		self.connect("delete_event", self.quit)
+
+		# Variables definitions
+		
+		self.formats = [u'Flat', u'Scope', u'Full', u'16/9']
+		self.frmts = [u'F', u'S', u'C', u'V']
+		self.resolutions = [u'2K', u'4K']
+		self.framerates = [u'12', u'24', u'25', u'30', u'48', u'50', u'60', u'96']
+		self.fondus = [u'noir', u'iris', u'aucun']
+		self.cleanVals = [u'clean', u'wash', u'vacuum', u'tidy', u'maniac', u'messy']
+		self.categories = [u'ADV', u'FTR', u'POL', u'PSA', u'SHR', u'TLR', u'TST', u'XSN']
+		self.alignements = [u'center', u'left', u'right', u'justify']
+		self.on_off = [u'on', u'off']
+		self.affiches = [u'cour',u'jardin']
+		self.angles = [u'Nord', u'Sud', u'N-E',u'N-W',u'S-E',u'S-W', u'Centre']
+		self.vid_framerates = [u'inconnu', u'12', u'24', u'25', u'30', u'48', u'50', u'60', u'96']
+		self.vid_formats = [u'inconnu', u'16/9', u'1.85', u'Scope']
+		self.odcp_loglevel = ['quiet', 'error', 'warn', 'info', 'debug']
+		self.ffmpeg_loglevel = ['quiet', 'panic', 'fatal', 'error', 'warning', 'info', 'verbose', 'debug']
+		self.j2k_methods = [u'imagemagick', u'opendcp', u'image_2_j2k']
+		self.mxf_methods = [u'asdcp', u'opendcp', u'gstreamer']
+		
+		
+		# Read conf file and set default values
+		self.initPrefs()
+		writeGlobalShellConf()
+		
+		# init an empty basename and file name
+		self.b_name = ''
+		self.file_name = ''
+
+		# initialize checked rows list (for files treeview)
+		self.checked_files = []
+		
+		# self.table is our main layout manager
+		self.table = gtk.Table(rows=4, columns=1, homogeneous=False)
+		
+		# Set up the dictionary to hold all registered widgets
+		self.propUI = {}
+
+		###### Create menus and toolbar items
+		ui = u"""
+		<ui>
+			<menubar name="MenuBar">
+				<menu action="Fichier">
+					<menuitem action="Ajouter un fichier" />
+					<menuitem action="Fichiers récents" />
+					<separator />
+					<menuitem action="Afficher les options" />
+					<menuitem action="Enregistrer les options" />
+					<menuitem action="Initialiser les options" />
+					<menuitem action="Gérer les polices" />
+					<menuitem action="Visionneuse" />
+					<separator />
+					<menuitem action="Aperçu" />
+					<menuitem action="Générer un DCP" />
+					<menuitem action="Zipper un DCP" />
+					<menuitem action="Copier vers..." />
+					<menuitem action="Nettoyer" />
+					<separator />
+					<menuitem action="Quitter" />
+				</menu>
+				<menu action="Aide">
+					<menuitem action="Assistance" />
+					<menu action="Liens utiles">
+						<menuitem action="ImageMagick" />
+						<menuitem action="Sox" />
+						<menuitem action="FFmpeg" />
+						<menuitem action="Avconv" />
+					</menu>
+					<menuitem action="Rapporter un Bug" />
+					<separator />
+					<menuitem action="A propos" />
+				</menu>
+			</menubar>
+			<toolbar name="ToolBar">
+				<toolitem action="Ajouter un fichier" />
+				<toolitem action="Générer un DCP" />
+				<separator />
+				<toolitem action="Options" />
+				<toolitem action="Enregistrer les options" />
+				<separator />
+				<toolitem action="Zipper un DCP" />
+				<toolitem action="Gérer les polices" />
+				<toolitem action="Nettoyer" />
+			</toolbar>
+		</ui>
+		"""
+
+		###### Set up UI manager
+		self.uiManager = gtk.UIManager()
+
+		accelGroup = self.uiManager.get_accel_group()
+		self.add_accel_group(accelGroup)
+
+		###### Actions
+		self.ag = gtk.ActionGroup(u"Fichier")
+		self.ag.add_actions([("Fichier", None, "Fichiers"),
+						("Ajouter un fichier", gtk.STOCK_ADD, "Ajouter un fichier", None, "Ajouter une image, un son, une video", self.addFileDialog),
+						("Fichiers récents", gtk.STOCK_OPEN, "Fichiers récents", None, "Ajouter un fichier déjà utilisé récemment", self.addRecentDialog),
+						("Supprimer", gtk.STOCK_REMOVE, "Supprimer", None, "Supprimer un fichier", self.removeFileFromSource),
+						("Générer un DCP", gtk.STOCK_EXECUTE, "Générer un DCP", None, "Save the current config as...", self.generateDcp),
+						("Zipper un DCP", gtk.STOCK_CONVERT, "Zipper un DCP", None, "Compresser un DCP au format zip pour transfert", self.zipMyDcp),
+						("Copier vers...", gtk.STOCK_CDROM, "Copier vers...", None, "Copier une production récente vers un disque ou une clef USB", self.exportMyDcp),
+						("Quitter", gtk.STOCK_QUIT, "_Quitter", None, "Quitter QuickDCP", self.quit),
+						("Options", None, "Options"),
+						("Afficher les options", gtk.STOCK_PREFERENCES, "Afficher les options", None, "Afficher et modifier les options", self.showPrefs),
+						("Enregistrer les options", gtk.STOCK_SAVE, "Enregistrer les options", None, "Save the current config", self.writeConfig),
+						("Initialiser les options",gtk.STOCK_PREFERENCES, "Options par défaut", None, "Revenir aux options par défaut", self.initPrefs),
+						("Outils", None, "Outils"),
+						("Aperçu", gtk.STOCK_PAGE_SETUP, "Aperçu", None, "Aperçu d'une image", self.preview),
+						("Visionneuse", gtk.STOCK_MEDIA_FORWARD, "Visionneuse", None, "Essayer de jouer un DCP", self.DcpViewer),
+						("Gérer les polices",gtk.STOCK_SELECT_FONT, "Gérer les polices", None, "Rechercher, ajouter des polices", self.manageFonts),
+						("Nettoyer", gtk.STOCK_CLEAR, "Faire le ménage", None, "Supprimer les fichiers intermédiaires antérieurs", self.cleanWorkspace),
+						("Aide", None, "Aide"),
+						("Assistance", gtk.STOCK_HELP, "Assistance", None, "Aide en ligne de QuickDCP", self.help),
+						("Liens utiles", None, "Liens utiles", None, "En savoir plus sur les programmes utilisés par QuickDCP"),
+						("ImageMagick", None, "ImageMagick", None, "En savoir plus sur les programmes utilisés par QuickDCP", self.weblinkIMagick),
+						("Sox", None, "Sox", None, "En savoir plus sur les programmes utilisés par QuickDCP", self.weblinkSox),
+						("FFmpeg", None, "FFmpeg", None, "En savoir plus sur les programmes utilisés par QuickDCP", self.weblinkFFmpeg),
+						("Avconv", None, "Avconv", None, "En savoir plus sur les programmes utilisés par QuickDCP", self.weblinkAvconv),
+						("Rapporter un Bug",gtk.STOCK_MISSING_IMAGE, "Rapporter un bug", None, "Report a problem with tintwizard", self.reportBug),
+						("A propos",gtk.STOCK_ABOUT, "A propos", None, "En savoir plus sur QuickDCP", self.about)])
+						
+
+		###### Add main UI
+		self.uiManager.insert_action_group(self.ag, -1)
+		self.uiManager.add_ui_from_string(ui)
+
+		##### Attach menubar and toolbar to main window
+		self.table.attach(self.uiManager.get_widget("/MenuBar"), 
+			0, 4, 0, 1, yoptions=gtk.FILL)
+		#self.table.attach(self.uiManager.get_widget("/ToolBar"), 0, 4, 1, 2, yoptions=gtk.FILL, ypadding=5)
+
+		# Create and add the status bar to the bottom of the main window
+		self.statusBar = gtk.Statusbar()
+		self.statusBar.set_has_resize_grip(True)
+		self.updateStatusBar(CUR_STATE)
+		self.table.attach(self.statusBar, 0,4,4,5, yoptions=gtk.FILL, xpadding=10)
+
+		############# Create main notebook
+		self.notebook = gtk.Notebook()
+		self.notebook.set_tab_pos(gtk.POS_LEFT)
+
+		###### Options (tab 0)
+		self.createOptionsWidgets()
+		self.notebook.append_page(self.optionsNotebook, gtk.Label("Options"))
+		
+		###### Files (first -1- and default main notebook page)
+		self.createFilesWidgets()
+		self.notebook.append_page(self.filesTable, gtk.Label("Sources"))
+		
+		## We can show the window now
+		self.show_all()
+
+		###### Preview + texte (tab 2)
+		self.createPreviewWidgets()
+		self.notebook.append_page(self.previewTable, gtk.Label("Cartons"))
+		
+		###### Tiff/Jpeg2000 sequences (tab 3)
+		self.createSequenceWidgets()
+		self.notebook.append_page(self.seqTable, gtk.Label("Sequences"))
+		
+		###### Audio shit (tab 4)
+		self.createAudioWidgets()
+		self.notebook.append_page(self.audioTable, gtk.Label("Audio"))
+		
+		###### DCP execution (tab 5)
+		self.createDCPWidgets()
+		self.notebook.append_page(self.dcpTable, gtk.Label("Execution"))
+		
+		###### Add main notebook to window and show
+		self.notebook.connect("switch-page", self.switchPage)
+		self.table.attach(self.notebook, 0,4,2,3, xpadding=5, ypadding=5)
+
+
+		
+		
+		## Gestion des dépendances
+		self.checkDeps()
+		
+		# on gère les boutons texte et le champ texte de l'onglet aperçu
+		self.manageTexte()
+
+		# on recense les fichiers sources
+		self.scanSources()
+		
+			
+		## Rendu
+		self.add(self.table)
+		self.show_all()
+		
+		## Things we won't show before they're selected
+		
+		# insensibiliser les boutons d'actions
+		self.btnCarton.set_sensitive(False)
+		self.btnDiapo.set_sensitive(False)
+		self.btnCarSon.set_sensitive(False)
+		self.btnDiaSon.set_sensitive(False)
+		self.btnVideo.set_sensitive(False)
+#~ 
+		#~ # masquer les boutons d'actions
+		#~ self.btnCarton.hide()
+		#~ self.btnDiapo.hide()
+		#~ self.btnCarSon.hide()
+		#~ self.btnDiaSon.hide()
+		#~ self.btnVideo.hide()
+		
+		# masquer les onglets provisoirement inutilisés
+		self.previewTable.hide()
+		self.audioTable.hide()
+		self.dcpTable.hide()
+		
+		# masquer le visionneur de séquence
+		self.screenTable.hide()		
+		# mettre à jour les jobs de sequence (démasque l'onglet s'il y a des séquences)
+		self.refreshPendingJobs()
+		# mettre à jour les cartons préparés (démasque l'onglet s'il y a des cartons)
+		self.refreshCrtnStore()
+		
+		# autres éléments à insensibiliser ou masquer
+		self.updatePrevBtn.set_sensitive(False)
+		self.toggleDebug()
+		
+		# onglet d'ouverture
+		self.notebook.set_current_page(1)
+		
+		# dans l'onglet options, on ouvre sur les options générales
+		self.optionsNotebook.set_current_page(0)
+		
+
+	######## Menu related functions	
+
+	def help(self, action=None):
+		"""Opens the Help wiki page in the default web browser."""
+		try:
+			webbrowser.open("http://code.google.com/p/tintwizard/wiki/Help")
+		except:
+			errorDialog(self, "Your default web-browser could not be opened.\nPlease visit http://code.google.com/p/tintwizard/wiki/Help")
+
+	def reportBug(self, action=None):
+		"""Opens the bug report page in the default web browser."""
+		try:
+			webbrowser.open("http://gitorious.org/quickdcp/issues/entry")
+		except:
+			errorDialog(self, "Le navigateur par défaut n'a pas pu être ouvert.\nVeuillez visiter http://gitorious.org/quickdcp/issues/entry")
+
+	def about(self, action=None):
+		"""Displays the About dialog."""
+		about = gtk.AboutDialog()
+		about.set_program_name(NAME)
+		about.set_version(QDCP_VERSION)
+		about.set_authors(AUTHORS)
+		about.set_comments(COMMENTS)
+		about.set_website(WEBSITE)
+		gtk.about_dialog_set_url_hook(self.aboutLinkCallback)
+		about.run()
+		about.destroy()
+
+	def aboutLinkCallback(dialog, link, data=None):
+		"""Callback for when a URL is clicked in an About dialog."""
+		try:
+			webbrowser.open(link)
+		except:
+			errorDialog(self, "Le navigateur par défaut n'a pas pu être ouvert.\nVeuillez visiter %s" % link)
+
+	def checkDeps(self):
+		"""Check the presence of quickDCP dependencies on the system
+		and propose to install them when possible"""
+		
+		## Type de shell
+		# bash, sinon sh
+		# et sur windows?
+		
+		## ImageMagick
+		# try:
+		# 	subprocess.Popen('convert logo: logo.gif && identify logo.gif > logo.txt')
+		# - sur debian, apt-get ou 
+		# - on redhat/centos, imagemagick's site proposes binaries (rpm)
+		# see also graphicsmagick-imagemagick-compat
+		# - on mac, need to install macports or homebrew if not already present
+		# ande run : 'sudo port install ImageMagick'. It's configured automagically !
+		# but they also provide a binary
+		# - on windows, they provide binaries, see on the IM site
+		# Sinon, reste à installer depuis les sources
+		#  tar xvzf ImageMagick.tar.gz
+		#  cd ImageMagick-6.9.0
+		#  ./configure
+		#  make
+		#
+		# Now you need to be root :
+		#  sudo make install
+		#  sudo ldconfig /usr/local/lib
+		#  
+		#  /usr/local/bin/convert logo: logo.gif
+		# 
+		# éventuellement (tests, ghostscript needed))
+		#  make check
+	
+		
+		## Sox
+		
+		## FFmpeg
+		# website (pour télécharger des binaires):
+		#https://www.ffmpeg.org/download.html
+		# repos (pour compiler à partir des sources):
+		
+		## Python 2 || 3 ?
+		
+		## Gtk 2 || 3 ?
+		
+		pass 
+
+	def weblinkIMagick(self, action=None):
+		"""Open the imagemagick website in a webbrowser"""
+		link = "http://imagemagick.org/Usage/"
+		try:
+			webbrowser.open(link)
+		except:
+			errorDialog(self, "Le navigateur par défaut n'a pas pu être ouvert.\nVeuillez visiter %s" % link)
+		
+	def weblinkSox(self, action=None):
+		"""Open the sox website in a webbrowser"""
+		link = "http://sox.sourceforge.net"
+		try:
+			webbrowser.open(link)
+		except:
+			errorDialog(self, "Le navigateur par défaut n'a pas pu être ouvert.\nVeuillez visiter %s" % link)
+
+	def weblinkFFmpeg(self, action=None):
+		"""Open the ffmpeg website in a webbrowser"""
+		link = "http://ffmpeg.org"
+		try:
+			webbrowser.open(link)
+		except:
+			errorDialog(self, "Le navigateur par défaut n'a pas pu être ouvert.\nVeuillez visiter %s" % link)
+
+	def weblinkAvconv(self, action=None):
+		"""Open the avconv website in a webbrowser"""
+		link = "http://sox.sourceforge.net"
+		try:
+			webbrowser.open(link)
+		except:
+			errorDialog(self, "Le navigateur par défaut n'a pas pu être ouvert.\nVeuillez visiter %s" % link)
+			
+	###################################################
+
+	########## OPTIONS TAB
+	
+	###################################################
+	
+	def createOptionsWidgets(self):
+		"""Initiate options tab in main window"""
+		# Table des options
+		self.optionsTable = gtk.Table(rows=1, columns=1, homogeneous = False)
+		self.optionsTable.set_row_spacings(5)
+		self.optionsTable.set_col_spacings(5)
+		# Notebook des options
+		self.optionsNotebook = gtk.Notebook()
+		self.optionsNotebook.set_tab_pos(gtk.POS_LEFT)
+	
+		## Create and populate options tabs
+		self.tabOptionsGeneral()
+		self.tabOptionsDcpName()
+		self.tabOptionsCartons()
+		self.tabOptionsTexte()
+		self.tabOptionsLogos()
+		self.tabOptionsDiapo()
+		self.tabOptionsAudio()
+		self.tabOptionsVideo()
+		self.tabOptions3D()
+		self.tabOptionsSoutitres()
+		self.tabOptionsQuickDCP()
+		self.tabOptionsFileEdit()
+		
+		## Add tabs to options notebook
+		self.optionsNotebook.append_page(self.optionsGeneral, gtk.Label("Génerales"))
+		self.optionsNotebook.append_page(self.optionsDcpName, gtk.Label("Nom de DCP"))
+		self.optionsNotebook.append_page(self.optionsCartons, gtk.Label("Cartons"))
+		self.optionsNotebook.append_page(self.optionsTexte, gtk.Label("Texte"))
+		self.optionsNotebook.append_page(self.optionsLogos, gtk.Label("Logos"))
+		self.optionsNotebook.append_page(self.optionsDiapo, gtk.Label("Diaporamas"))
+		self.optionsNotebook.append_page(self.optionsAudio, gtk.Label("Audio"))
+		self.optionsNotebook.append_page(self.optionsVideo, gtk.Label("Video"))
+		self.optionsNotebook.append_page(self.options3D, gtk.Label("3D"))
+		self.optionsNotebook.append_page(self.optionsSoutitres, gtk.Label("Sous-titres"))
+		#self.optionsNotebook.append_page(self.kbdShortcuts, gtk.Label("Raccourcis"))
+		self.optionsNotebook.append_page(self.optionsQDCP, gtk.Label("QuickDCP"))
+		self.optionsNotebook.append_page(self.configFileTab, gtk.Label("Fichier"))
+
+		###### Onglet options générales
+	def tabOptionsGeneral(self):
+		"""Settings of general options for dcp conversion """
+		self.optionsGeneral = gtk.Table(rows = 6, columns = 2, homogeneous = True)
+		self.optionsGeneral.set_row_spacings(10)
+		self.optionsGeneral.set_col_spacings(10)
+		
+			# Format
+		lblFormat = createLabel(self.optionsGeneral, text="Format", 
+			gridX=0, gridY=0, xPadding=10, yPadding=10, yExpand=False)
+		lblFormat.set_alignment(xalign=1.0, yalign=0.5)
+		self.wdgtFormat = createComboBox(self.optionsGeneral, self.formats, 
+			gridX=1, gridY=0, active=True)
+		self.wdgtFormat.set_active(self.formats.index(Prefs['format']))
+		self.wdgtFormat.connect_object("changed", self.changeOccurred, "format", self.wdgtFormat)
+
+			# Catégorie
+		lblCat = createLabel(self.optionsGeneral, text="Catégorie", 
+			gridX=0, gridY=1, xPadding=10, yPadding=10, yExpand=False)
+		lblCat.set_alignment(xalign=1.0, yalign=0.5)
+		self.wdgtCat = createComboBox(self.optionsGeneral, self.categories, 
+			gridX=1, gridY=1, active=True)
+		self.wdgtCat.set_active(self.categories.index(Prefs['categorie']))
+		self.wdgtCat.connect_object("changed", self.changeOccurred, "categorie", self.wdgtCat)
+
+			# Resolution
+		createLabel(self.optionsGeneral, text="Résolution", 
+			gridX=0, gridY=2, xPadding=10, yPadding=10, yExpand=False)
+		self.wdgtResol = createComboBox(self.optionsGeneral, self.resolutions, 
+			gridX=1, gridY=2, active=True)
+		self.wdgtResol.set_active(self.resolutions.index(Prefs['resolution']))
+		self.wdgtResol.connect_object("changed", self.changeOccurred, "resolution", self.wdgtResol)
+		
+			# Framerate
+		createLabel(self.optionsGeneral, text="Framerate", 
+			gridX=0, gridY=3, xPadding=10, yPadding=10, yExpand=False)
+		self.wdgtFrate = createComboBox(self.optionsGeneral, self.framerates, 
+			gridX=1, gridY=3, active=True)
+		self.wdgtFrate.set_active(self.framerates.index(Prefs['framerate']))
+		self.wdgtFrate.connect_object("changed", self.changeOccurred, "framerate", self.wdgtFrate)
+		
+			# Issuer
+		createLabel(self.optionsGeneral, text="Auteur/émetteur", 
+			gridX=0, gridY=4, xPadding=10, yPadding=10, yExpand=False)
+		self.wdgtIssuer = createEntry(self.optionsGeneral, 15, 15, 
+			text=''.join(Prefs['issuer']), 
+			gridX=1, gridY=4, yExpand=False, name="issuer_entry")
+		self.wdgtIssuer.connect_object("focus-out-event", self.changeOccurred, "issuer", self.wdgtIssuer)
+
+			# Issuer short
+		createLabel(self.optionsGeneral, text="Auteur abrégé", 
+			gridX=0, gridY=5, xPadding=10, yPadding=10, yExpand=False)
+		self.wdgtIssuerShort = createEntry(self.optionsGeneral, 4, 4, 
+			text=''.join(Prefs['issuer_short']), 
+			gridX=1, gridY=5, yExpand=False, name="issuer-shortname")
+		self.wdgtIssuerShort.connect_object("focus-out-event", self.changeOccurred, "issuer_short", self.wdgtIssuerShort)
+
+		###### Onglet options des cartons
+	def tabOptionsCartons(self):
+		"""Still images options tab"""
+		self.optionsCartons = gtk.Table(rows = 5, columns = 3, homogeneous = False)
+		self.optionsCartons.set_row_spacings(10)
+		self.optionsCartons.set_col_spacings(10)
+
+			# Durée des cartons
+		createLabel(self.optionsCartons, text="Durée des cartons\n(en secondes)", 
+			gridX=0, gridY=0, xPadding=10, yPadding=10)
+		self.wdgtClaps = createSpinButton(self.optionsCartons, floattype=True, valeur=Prefs['crtn_laps'], 
+			gridX=1, gridY=0, step=1, page=10, mini=1, maxi=3600)
+		self.wdgtClaps.connect_object("focus-out-event", self.changeOccurred, "crtn_laps", self.wdgtClaps)
+
+			# Fondus de début et de fin
+		createLabel(self.optionsCartons, text="Fondus de début et de fin", 
+			gridX=0, gridY=1, xPadding=10, yPadding=10, yExpand=False)
+			# Fondu de début
+		self.wdgtFonduD = createComboBox(self.optionsCartons, self.fondus,
+			gridX=1, gridY=1, yExpand=False)
+		self.wdgtFonduD.set_active(self.fondus.index(Prefs['crtn_fondu_d']))
+		self.wdgtFonduD.connect_object("changed", self.changeOccurred, "crtn_fondu_d", self.wdgtFonduD)
+			# Fondu de fin
+		self.wdgtFonduF = createComboBox(self.optionsCartons, self.fondus,
+			gridX=2, gridY=1, yExpand=False)
+		self.wdgtFonduF.set_active(self.fondus.index(Prefs['crtn_fondu_f']))
+		self.wdgtFonduF.connect_object("changed", self.changeOccurred, "crtn_fondu_f", self.wdgtFonduF)
+
+			# Durée des fondus
+		createLabel(self.optionsCartons, text="Durée des fondus\n(en nombre d'images)", 
+			gridX=0, gridY=2, xPadding=10, yPadding=10, yExpand=False)
+			# Durée fondu de début
+		self.wdgtFlapsD = createSpinButton(self.optionsCartons, floattype=True, valeur=Prefs['crtn_fondulaps_d'], 
+			gridX=1, gridY=2, step=1, page=10, mini=1, maxi=100)
+		self.wdgtFlapsD.connect_object("focus-out-event", self.changeOccurred, "crtn_fondulaps_d", self.wdgtFlapsD)
+			# Durée fondu de fin
+		self.wdgtFlapsF = createSpinButton(self.optionsCartons, floattype=True, valeur=Prefs['crtn_fondulaps_f'], 
+			gridX=2, gridY=2, step=1, page=10, mini=1, maxi=100)
+		self.wdgtFlapsF.connect_object("focus-out-event", self.changeOccurred, "crtn_fondulaps_f", self.wdgtFlapsF)
+
+			# Marge et couleur de fond
+		createLabel(self.optionsCartons, text="Marge (en pixels) et\ncouleur de fond", 
+			gridX=0, gridY=3, xPadding=10, yPadding=10, yExpand=False)
+
+			# Marge
+		self.wdgtMargin = createSpinButton(self.optionsCartons, floattype=True, valeur=Prefs['crtn_marge'], 
+			gridX=1, gridY=3,  step=1, page=10, mini=1, maxi=500)
+		self.wdgtMargin.connect_object("focus-out-event", self.changeOccurred, "crtn_marge", self.wdgtMargin)
+
+			# Background
+		self.wdgtBkground = createColorButton(self.optionsCartons, color=Prefs['crtn_background'], 
+			useAlpha=True, name="crtn_background", 
+			gridX=2, gridY=3, sizeX=1, sizeY=1, yExpand=False)
+		self.wdgtBkground.connect_object("color-set", self.changeOccurred, "crtn_background", self.wdgtBkground)
+		
+		###### Onglet options du texte
+	def tabOptionsTexte(self):	
+		"""Text options tab"""
+		self.optionsTexte = gtk.Table(rows = 5, columns = 4, homogeneous = False)
+		self.optionsTexte.set_row_spacings(10)
+		self.optionsTexte.set_col_spacings(10)
+
+		# crtn_text (combobox)
+		createLabel(self.optionsTexte, text="Activer le texte", 
+			gridX=0, gridY=0, xPadding=5, yPadding=5)
+		self.wdgtTxtOn = createComboBox(self.optionsTexte, self.on_off, 
+			gridX=1, gridY=0, sizeX=1, sizeY=1, yExpand=False)
+		self.wdgtTxtOn.set_active(self.on_off.index(Prefs['crtn_text']))
+		self.wdgtTxtOn.connect_object("changed", self.changeOccurred, "crtn_text", self.wdgtTxtOn)
+
+		# crtn_font (font button)
+		createLabel(self.optionsTexte, text="Fonte", 
+			gridX=2, gridY=0, xPadding=5, yPadding=5)
+		self.wdgtFont = createFontButton(self.optionsTexte, font=Prefs['crtn_font'],
+			gridX=3, gridY=0)
+		self.wdgtFont.set_use_font(True)
+		self.wdgtFont.connect_object("font-set", self.changeOccurred, "crtn_font", self.wdgtFont)
+
+		# text_color (color box)
+		createLabel(self.optionsTexte, text="Couleur du texte", 
+			gridX=0, gridY=1, xPadding=5, yPadding=5)
+		self.wdgtTxtColor = createColorButton(self.optionsTexte, color=Prefs['text_color'], 
+			useAlpha=True, name="text_color", 
+			gridX=1, gridY=1, sizeX=1, sizeY=1, yExpand=False)
+		self.wdgtTxtColor.connect_object("color-set", self.changeOccurred, "text_color", self.wdgtTxtColor)
+
+		# text_border (combobox)
+		createLabel(self.optionsTexte, text="Cadre du texte", 
+			gridX=2, gridY=1, xPadding=5, yPadding=5)
+		self.wdgtTxtBrdr = createComboBox(self.optionsTexte, self.on_off,
+			gridX=3, gridY=1, yExpand=False)
+		self.wdgtTxtBrdr.set_active(self.on_off.index(Prefs['text_border']))
+		self.wdgtTxtBrdr.connect_object("changed", self.changeOccurred, "text_border", self.wdgtTxtBrdr)
+
+		# text_border_color (color button)
+		createLabel(self.optionsTexte, text="Couleur du cadre", 
+			gridX=0, gridY=2, xPadding=5, yPadding=5)
+		self.wdgtBrdrColor = createColorButton(self.optionsTexte, color=Prefs['text_border_color'], 
+			useAlpha=True, name="text_border_color", 
+			gridX=1, gridY=2, yExpand=False)
+		self.wdgtBrdrColor.connect_object("color-set", self.changeOccurred, "text_border_color", self.wdgtBrdrColor)
+
+
+		# text_align (combobox)
+		createLabel(self.optionsTexte, text="Justification", 
+			gridX=0, gridY=3, xPadding=5, yPadding=5)
+		self.wdgtTxtAlign = createComboBox(self.optionsTexte, self.alignements,
+			gridX=1, gridY=3, xExpand=True)
+		self.wdgtTxtAlign.set_active(self.alignements.index(Prefs['text_align']))
+		self.wdgtTxtAlign.connect_object("changed", self.changeOccurred, "text_align", self.wdgtTxtAlign)
+
+		# text_border_width (spin button)
+		createLabel(self.optionsTexte, text="Epaisseur du cadre", 
+			gridX=2, gridY=2, xPadding=5, yPadding=5)
+		self.wdgtTxtBrdrW = createSpinButton(self.optionsTexte, floattype=True, valeur=Prefs['text_border_width'],
+			gridX=3, gridY=2, step=1, page=10, mini=1, maxi=99)
+		self.wdgtTxtBrdrW.connect_object("focus-out-event", self.changeOccurred, "text_border_width", self.wdgtTxtBrdrW)
+
+		# text_interline (spin button)
+		createLabel(self.optionsTexte, text="Interligne", 
+			gridX=2, gridY=3, xPadding=5, yPadding=5)
+		self.wdgtInterline = createSpinButton(self.optionsTexte, floattype=True, valeur=Prefs['text_interline'], 
+			gridX=3, gridY=3, step=1, page=10, mini=-99, maxi=99)
+		self.wdgtInterline.connect_object("focus-out-event", self.changeOccurred, "text_interline", self.wdgtInterline)
+
+		# text_gravity (combobox)
+		createLabel(self.optionsTexte, text="Position du texte", 
+			gridX=0, gridY=4, xPadding=5, yPadding=5)
+		self.wdgtTxtGrav = createComboBox(self.optionsTexte, self.angles,
+			gridX=1, gridY=4, xExpand=True)
+		self.wdgtTxtGrav.set_active(self.angles.index(Prefs['text_gravity']))
+		self.wdgtTxtGrav.connect_object("changed", self.changeOccurred, "text_gravity", self.wdgtTxtGrav)
+
+		# affiche_gravity (combobox)
+		createLabel(self.optionsTexte, text="Position de l'affiche", 
+			gridX=2, gridY=4, xPadding=5, yPadding=5)
+		self.wdgtAffGrav = createComboBox(self.optionsTexte, self.affiches,
+			gridX=3, gridY=4, xExpand=True)
+		self.wdgtAffGrav.set_active(self.affiches.index(Prefs['affiche_gravity']))
+		self.wdgtAffGrav.connect_object("changed", self.changeOccurred, "affiche_gravity", self.wdgtAffGrav)
+		
+		# crtn_gouttiere (spin button)
+		createLabel(self.optionsTexte, text="Gouttière", 
+			gridX=0, gridY=5, xPadding=5, yPadding=5)
+		self.wdgtGoutt = createSpinButton(self.optionsTexte, floattype=True, valeur=Prefs['crtn_gouttiere'], 
+			gridX=1, gridY=5, step=1, page=10, mini=1, maxi=3600)
+		self.wdgtGoutt.connect_object("focus-out-event", self.changeOccurred, "crtn_gouttiere", self.wdgtGoutt)
+
+		###### Onglet des logos
+	def tabOptionsLogos(self):
+		"""Logo options tab"""
+		self.optionsLogos = gtk.Table(rows = 10, columns = 4, homogeneous = False)
+		self.optionsLogos.set_row_spacings(10)
+		self.optionsLogos.set_col_spacings(10)
+
+			# Logo on/off
+		createLabel(self.optionsLogos, text="Logo principal", 
+			gridX=0, gridY=0, xPadding=5, yPadding=5, yExpand=False)
+			
+		self.logoSwitch = createComboBox(self.optionsLogos, self.on_off, 
+			gridX=1, gridY=0, xExpand=True)
+		self.logoSwitch.set_active(self.on_off.index(Prefs['logo']))
+		self.logoSwitch.connect_object("changed", self.changeOccurred, "logo", self.logoSwitch)
+
+			# Main logo file
+		createLabel(self.optionsLogos, text="Fichier du logo principal", 
+			gridX=0, gridY=1, xPadding=5, yPadding=5, yExpand=False)
+		self.wdgtLogoFile = createFileChooserButton(self.optionsLogos, 
+			title="Sélectionner le fichier du logo", 
+			curfile=str(Prefs['logo_file']), folder_mode=False, width=15,
+			gridX=1, gridY=1, xExpand=False)
+		self.wdgtLogoFile.set_tooltip_text(str(Prefs['logo_file']))
+		self.wdgtLogoFile.connect_object("file-set", self.changeOccurred, "logo_file", self.wdgtLogoFile)
+		
+			# logo width
+		createLabel(self.optionsLogos, text="Largeur du logo", 
+			gridX=0, gridY=2, xPadding=5, yPadding=5, yExpand=False)
+		self.wdgtLogoWidth = createEntry(self.optionsLogos, 4, 4, 
+			text=str(Prefs['logo_w']), 
+			gridX=1, gridY=2, yExpand=False, name="logo_width")
+		self.wdgtLogoWidth.connect_object("focus-out-event", self.changeOccurred, "logo_w", self.wdgtLogoWidth)
+
+			# logo height
+		createLabel(self.optionsLogos, text="Hauteur du logo", 
+			gridX=0, gridY=3, xPadding=5, yPadding=5, yExpand=False)
+		self.wdgtLogoHeight = createEntry(self.optionsLogos, 4, 4, 
+			text=str(Prefs['logo_h']), 
+			gridX=1, gridY=3, yExpand=False, name="logo_height")
+		self.wdgtLogoHeight.connect_object("focus-out-event", self.changeOccurred, "logo_h", self.wdgtLogoHeight)
+
+			# logo x
+		createLabel(self.optionsLogos, text="Position horizontale (x)", 
+			gridX=0, gridY=4, xPadding=5, yPadding=5, yExpand=False)
+		self.wdgtLogoPosX = createEntry(self.optionsLogos, 4, 4, 
+			text=str(Prefs['logo_x']), 
+			gridX=1, gridY=4, yExpand=False, name="logo_positionX")
+		self.wdgtLogoPosX.connect_object("focus-out-event", self.changeOccurred, "logo_x", self.wdgtLogoPosX)
+
+			# logo y
+		createLabel(self.optionsLogos, text="Position verticale (y)", 
+			gridX=0, gridY=5, xPadding=5, yPadding=5, yExpand=False)
+		self.wdgtLogoPosY = createEntry(self.optionsLogos, 4, 4, 
+			text=str(Prefs['logo_y']), 
+			gridX=1, gridY=5, yExpand=False, name="logo_positionY")
+		self.wdgtLogoPosY.connect_object("focus-out-event", self.changeOccurred, "logo_y", self.wdgtLogoPosY)
+
+			# Text (special) logos directory
+		createLabel(self.optionsLogos, text="Dossier des logos spéciaux", 
+			gridX=0, gridY=6, xPadding=5, yPadding=5, yExpand=False)
+		self.wdgtLogoPath = createFileChooserButton(self.optionsLogos,
+			title="Sélectionner le dossier de réception des DCP", 
+			curdir=str(Prefs['logo_path']), folder_mode=True, width=15,
+			gridX=1, gridY=6, xExpand=False)
+		self.wdgtLogoPath.connect_object("file-set", self.changeOccurred, "logo_path", self.wdgtLogoPath)
+
+			# special logos height
+		createLabel(self.optionsLogos, text="Hauteur des logos spéciaux", 
+			gridX=0, gridY=7, xPadding=5, yPadding=5, yExpand=False)
+		self.wdgtLogoSpeH = createSpinButton(self.optionsLogos, floattype=True, valeur=Prefs['logos_spe_h'],
+			gridX=1, gridY=7, step=1, page=10, mini=1, maxi=99)
+		self.wdgtLogoSpeH.connect_object("focus-out-event", self.changeOccurred, "logos_spe_h", self.wdgtLogoSpeH)
+
+			# manage special logos ?
+			# or just read the contents of special logos directory
+		createLabel(self.optionsLogos, text="Voir et gérer les logos spéciaux", 
+			gridX=0, gridY=8, xPadding=5, yPadding=5, yExpand=False)
+			
+	def tabOptionsDiapo(self):
+		###### Onglet options des diaporamas
+		self.optionsDiapo = gtk.Table(rows = 5, columns = 2, homogeneous = False)
+		self.optionsDiapo.set_row_spacings(10)
+		self.optionsDiapo.set_col_spacings(10)
+
+	def tabOptionsAudio(self):
+		###### Onglet options audio
+		self.optionsAudio = gtk.Table(rows = 5, columns = 2, homogeneous = False)
+		self.optionsAudio.set_row_spacings(10)
+		self.optionsAudio.set_col_spacings(10)
+
+		###### Onglet options video
+	def tabOptionsVideo(self):
+		###### Onglet options video
+		self.optionsVideo = gtk.Table(rows = 5, columns = 2, homogeneous = False)
+		self.optionsVideo.set_row_spacings(10)
+		self.optionsVideo.set_col_spacings(10)
+
+			# Framerate source
+		createLabel(self.optionsVideo, text="Framerate de la source", 
+			gridX=0, gridY=0, xPadding=5, yPadding=5, yExpand=False)
+		self.vidSrcFrate = createComboBox(self.optionsVideo, self.vid_framerates, 
+			gridX=1, gridY=0, active=True)
+		self.vidSrcFrate.set_active(self.vid_framerates.index(Prefs['vid_framerate']))
+		self.vidSrcFrate.connect_object("changed", self.changeOccurred, "vid_framerate", self.vidSrcFrate)
+		
+			# Format source
+		createLabel(self.optionsVideo, text="Format de la source", 
+			gridX=0, gridY=1, xPadding=5, yPadding=5, yExpand=False)
+		self.vidSrcFormat = createComboBox(self.optionsVideo, self.vid_formats, 
+			gridX=1, gridY=1, active=True)
+		self.vidSrcFormat.set_active(self.vid_formats.index(Prefs['vid_format']))
+		self.vidSrcFormat.connect_object("changed", self.changeOccurred, "vid_framerate", self.vidSrcFormat)
+
+	def tabOptions3D(self):
+		###### Onglet options video
+		self.options3D = gtk.Table(rows = 5, columns = 2, homogeneous = False)
+		self.options3D.set_row_spacings(10)
+		self.options3D.set_col_spacings(10)
+
+	def tabOptionsSoutitres(self):
+		###### Onglet options video
+		self.optionsSoutitres = gtk.Table(rows = 5, columns = 2, homogeneous = False)
+		self.optionsSoutitres.set_row_spacings(10)
+		self.optionsSoutitres.set_col_spacings(10)
+
+	def tabOptionsDcpName(self):
+		###### Onglet options nom de DCP
+		self.optionsDcpName = gtk.Table(rows = 5, columns = 2, homogeneous = False)
+		self.optionsDcpName.set_row_spacings(10)
+		self.optionsDcpName.set_col_spacings(10)
+		# exemple de nom
+		self.exampleName = createLabel(self.optionsDcpName, text="",
+			gridX=0, gridY=0, sizeX=2, yPadding=20, xExpand=True)
+		self.exampleName.set_alignment(xalign=0.5, yalign=0.8)
+		
+		# checkboxes :
+		# inclusion de la date
+		# langue
+		# type de dcp (smpte...)
+		# format
+		
+
+	def tabOptionsQuickDCP(self):
+		###### Onglet options quickdcp
+		self.optionsQDCP = gtk.Table(rows = 9, columns = 3, homogeneous = True)
+		self.optionsQDCP.set_row_spacings(10)
+		self.optionsQDCP.set_col_spacings(10)
+
+			# Autoclean (combobox)
+		createLabel(self.optionsQDCP, text="Auto-clean", 
+			gridX=0, gridY=0, xPadding=10, yPadding=10, yExpand=False )
+		self.wdgtClean = createComboBox(self.optionsQDCP, self.cleanVals, 
+			gridX=1, gridY=0, yExpand=False)		
+		self.wdgtClean.set_active(self.cleanVals.index(Prefs['autoclean']))
+		self.wdgtClean.connect_object("changed", self.changeOccurred, "autoclean", self.wdgtClean)
+
+			# Workspace (Inputdir) (filechooser)
+		createLabel(self.optionsQDCP, text="Dossier source", 
+			gridX=0, gridY=1, xPadding=10, yPadding=10, yExpand=False)
+		self.wdgtInputdir = createFileChooserButton(self.optionsQDCP, 
+			title="Sélectionner le dossier source à scanner", 
+			curdir=' '.join(Prefs['inputdir']), folder_mode=True, width=15,
+			gridX=1, gridY=1, yExpand=False)
+		self.wdgtInputdir.connect_object("file-set", self.changeOccurred, "inputdir", self.wdgtInputdir)
+		
+			# Outputdir (filechooser)
+		createLabel(self.optionsQDCP, text="Dossier cible", 
+			gridX=0, gridY=2, xPadding=10, yPadding=10, yExpand=False)
+		self.wdgtOutputdir = createFileChooserButton(self.optionsQDCP,
+			title="Sélectionner le dossier de réception des DCP""", 
+			curdir=' '.join(Prefs['outputdir']), folder_mode=True, width=15,
+			gridX=1, gridY=2, yExpand=False)
+		self.wdgtOutputdir.connect_object("file-set", self.changeOccurred, "outputdir", self.wdgtOutputdir)
+		
+			# Threads (spinbutton)
+		createLabel(self.optionsQDCP, text="Nombre de threads",
+			gridX=0, gridY=4, xPadding=10, yPadding=10, yExpand=False)
+		self.wdgtThreads = createSpinButton(self.optionsQDCP, floattype=False, valeur=Prefs['threads'], 
+			gridX=1, gridY=4, step=1, page=2, mini=1, maxi=64, yExpand=False)
+		self.wdgtThreads.connect_object("focus-out-event", self.changeOccurred, "threads", self.wdgtThreads)
+
+			# Debug mode (combobox)
+		createLabel(self.optionsQDCP, text="Mode deboggage", 
+			gridX=0, gridY=5, xPadding=10, yPadding=10, yExpand=False )
+		self.wdgtDebugMode = createComboBox(self.optionsQDCP, self.on_off, 
+			gridX=1, gridY=5, yExpand=False)		
+		self.wdgtDebugMode.set_active(self.on_off.index(Prefs['debug_mode']))
+		self.wdgtDebugMode.connect_object("changed", self.changeOccurred, "debug_mode", self.wdgtDebugMode)
+			# Opendcp loglevel
+		self.oLoglLabel = createLabel(self.optionsQDCP, text="Niveau de log d'OpenDCP", 
+			gridX=0, gridY=6, xPadding=10, yPadding=10, yExpand=False )
+		self.wdgtOdcpLogl = createComboBox(self.optionsQDCP, self.odcp_loglevel, 
+			gridX=1, gridY=6, yExpand=False)		
+		self.wdgtOdcpLogl.set_active(self.odcp_loglevel.index(Prefs['odcp_logl']))
+		self.wdgtOdcpLogl.connect_object("changed", self.changeOccurred, "odcp_logl", self.wdgtOdcpLogl)
+			# FFmpeg loglevel
+		self.fLoglLabel = createLabel(self.optionsQDCP, text="Niveau de log de FFmpeg/Avconv", 
+			gridX=0, gridY=7, xPadding=10, yPadding=10, yExpand=False )
+		self.wdgtFFLogl = createComboBox(self.optionsQDCP, self.ffmpeg_loglevel, 
+			gridX=1, gridY=7, yExpand=False)		
+		self.wdgtFFLogl.set_active(self.ffmpeg_loglevel.index(Prefs['ff_logl']))
+		self.wdgtFFLogl.connect_object("changed", self.changeOccurred, "ff_logl", self.wdgtFFLogl)
+			# J2k method (combobox)
+		self.j2kLabel = createLabel(self.optionsQDCP, text="Methode de conversion en Jpeg2000", 
+			gridX=0, gridY=8, xPadding=10, yPadding=10, yExpand=False )
+		self.wdgtJ2kConv = createComboBox(self.optionsQDCP, self.j2k_methods, 
+			gridX=1, gridY=8, yExpand=False)		
+		self.wdgtJ2kConv.set_active(self.j2k_methods.index(Prefs['tif2j2k']))
+		self.wdgtJ2kConv.connect_object("changed", self.changeOccurred, "tif2j2k", self.wdgtJ2kConv)
+			# MXF method (combobox)
+		self.mxfLabel = createLabel(self.optionsQDCP, text="Méthode de conversion en MXF", 
+			gridX=0, gridY=9, xPadding=10, yPadding=10, yExpand=False )
+		self.wdgtMxfConv = createComboBox(self.optionsQDCP, self.mxf_methods, 
+			gridX=1, gridY=9, yExpand=False)		
+		self.wdgtMxfConv.set_active(self.mxf_methods.index(Prefs['j2k2mxf']))
+		self.wdgtMxfConv.connect_object("changed", self.changeOccurred, "j2k2mxf", self.wdgtMxfConv)
+			
+		###### Onglet édition du fichier
+	def tabOptionsFileEdit(self):
+		self.configFileTab = gtk.VBox()		
+
+			# Avertissement
+		averto = gtk.Label("Ne modifier que si vous savez ce que vous faîtes.")
+		averto.set_alignment(0.5, 0.8)
+		averto.set_padding(10, 10)
+		self.configFileTab.pack_start(averto, expand=False)	
+			
+			# View config
+		self.configViewer = gtk.TextView()
+		self.configViewer.set_left_margin(10)
+		self.configViewer.set_editable(True)
+		self.configViewer.set_cursor_visible(True)
+		self.myConfigBuf = self.configViewer.get_buffer()
+		the_file = open(CONFIG_FILE, "r")
+		self.myConfigBuf.set_text(the_file.read())
+
+		adj = gtk.Adjustment(value=300, lower=10, page_size=100)
+		self.myFileW = gtk.ScrolledWindow()
+		self.myFileW.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+		self.myFileW.add(self.configViewer)
+		
+		self.myConfigFrame = gtk.HBox()
+		self.myConfigFrame.add(self.myFileW)
+		self.configFileTab.pack_start(self.myConfigFrame, expand=True)	
+			
+			# save button
+		self.configSaveBtn = gtk.Button("Enregistrer et recharger", gtk.STOCK_SAVE, False)
+		self.configSaveBtn.connect("released", self.configOverWrite)
+		self.configFileTab.pack_start(self.configSaveBtn, expand=False)		
+			# cancel button
+		self.configCancelBtn = gtk.Button("Annuler les modifications", gtk.STOCK_CANCEL, False)
+		self.configCancelBtn.connect("released", self.configKeepUnchanged)
+		self.configFileTab.pack_start(self.configCancelBtn, expand=False)		
+		
+		self.configFileTab.show_all()
+
+	def tabOptionsShortcuts(self):
+		###### Onglet raccourcis
+		self.kbdShortcuts = gtk.Table(rows = 1, columns = 1, homogeneous = False)
+		self.kbdShortcuts.set_row_spacings(10)
+		self.kbdShortcuts.set_col_spacings(10)
+				
+	######## Preferences management functions
+		
+	def initPrefs(self):
+		"""Reads the configuration file and stores the data in a dictionnary
+		or creates the default configuration file if it does not exists and
+		populate it with the default dictionnary"""
+		
+		## Write defaults in file if we run for the first time
+		if not os.path.exists(CONFIG_FILE):
+			self.writeConfig()
+			
+		## overwrite defaults with the existing file
+		else:
+			f = open(CONFIG_FILE, "r")
+			for line in f.readlines():
+				line = line.strip()
+				if not line[:1] == "#":
+					s = line.split("=")				# Create a list with KEY and VALUE
+					k = s[0].strip()				# Strip whitespace from KEY
+					v = str(s[1:2])
+					Prefs[k] = v.strip('[\' ]')		# Set the VALUE of KEY
+		
+			## if needed update config file
+			if unicode(Prefs['version']) < QDCP_VERSION:
+				
+				temprefs = Prefs
+				for key in Prefs:
+					if Prefs[key]:
+						Prefs[key] = temprefs[key]
+				Prefs['version'] = QDCP_VERSION
+				self.writeConfig()				
+				warningDialog(msg="Le fichier de configuration de QuickDCP a été mis à jour : \nQuickDCP version " + Prefs['version'])
+		
+		# update some global vars
+		WORKSPACE = Prefs['inputdir']
+		OUTPUTDIR = Prefs['outputdir']
+		AUTOCLEAN = Prefs['autoclean']
+
+	def writeConfig(self, configfile='qdcp.conf'):
+		"""Writes the current config dictionnary into a file."""
+		confStr = "#################################################\n"
+		confStr += "#           Configuration de quickdcp           #\n"
+		confStr += "# transcodeur d'images et videos au format DCP  #\n"
+		confStr += "#                ©Zanobox, 2014                 #\n"
+		confStr += "#################################################\n\n"
+		#now = datetime.time.strftime('%d-%m-%Y %H:%M:%S')
+		
+		temprefs = Prefs
+		for key in sorted(temprefs):
+			if key:
+				confStr += "%s = %s\n" % (key, str(temprefs[key]))
+		
+		confStr += "\n# EOF\n"
+		
+		if not os.path.isdir(CONFIG_DIR):
+			os.makedirs(CONFIG_DIR)
+					
+		f = open(CONFIG_DIR + configfile, "w")
+		f.write(confStr)
+		f.close()
+
+	def changeOccurred(self, option="", action=None, widget=None):
+		"""Called when the user changes something, i.e. entry value"""
+		# text entries list
+		txt_list = ['issuer', 'issuer_short', 'logo_w', 'logo_h',
+					'logo_x', 'logo_y']
+		# checkboxes list
+		chk_list = ['text_toggle']
+		# comboboxes list
+		cbb_list = ['format', 'resolution', 'framerate', 'categorie', 'crtn_text',
+					'autoclean', 'crtn_fondu_d', 'crtn_fondu_f', 'text_border', 
+					'logo', 'text_gravity', 'text_align', 'affiche_gravity',
+					'debug_mode', 'tif2j2k', 'j2k2mxf', 'odcp_logl', 'ff_logl']
+		# spinbuttons list
+		spb_list = ['crtn_laps', 'threads', 'crtn_fondulaps_d', 'crtn_fondulaps_f', 
+					'crtn_marge', 'crtn_gouttiere', 'text_border_width',
+					'logo_spe_h']
+		# filechoosers list
+		dir_list = ['inputdir', 'outputdir', 'logo_file', 'logo_path']
+		# color selectors 
+		col_list = ['crtn_background', 'text_color', 'text_border_color']
+		# font selector
+		fnt_list = ['crtn_font']
+		
+		# text entries
+		if option in txt_list:
+			value = widget.get_text()
+		# comboboxes
+		elif option in cbb_list:
+			value = action.get_active_text()
+			if option == 'crtn_text':
+				# on change l'état de l'autre bouton
+				if value == 'on':
+					self.toggleTxt.set_active(True)
+				else:
+					self.toggleTxt.set_active(False)
+			# global var
+			if option == 'autoclean':
+				AUTOCLEAN = value
+		# check boxes
+		elif option in chk_list:
+			value = action.get_active()
+			
+			# the text situation
+			if option == 'text_toggle':
+				option = 'crtn_text'
+				if str(value) == 'True':
+					value = 'on'
+				else:
+					value = 'off'
+				self.wdgtTxtOn.set_active(int(self.on_off.index(value)))
+					
+		# spin buttons
+		elif option in spb_list:
+			value = trunc(widget.get_value())
+		# file choosers
+		elif option in dir_list:
+			if option == 'logo_file':
+				value = action.get_filename()
+			else:
+				value = widget.get_file()
+			# global vars
+			if option == 'inputdir':
+				WORKSPACE = value
+			if option == 'outputdir':
+				OUTPUTDIR = value
+		# color selectors
+		elif option in col_list:
+			value = action.get_color()
+		# font button	
+		elif option in fnt_list:
+			value = action.get_font_name()	
+		else:
+			errorDialog(msg="Option " + str(option) + " non reconnue.")
+					
+		# mise à jour du dictionnaire
+		Prefs[option] = value
+		# Mise a jour du fichier de config
+		self.writeConfig()
+		
+		# dimensions de format
+		if option == 'format':
+			mx_width, mx_height = max_dims()
+		
+		# dans le cas du texte des cartons
+		if option == 'crtn_text':
+			self.manageTexte(button=widget)
+			
+		# debugging mode
+		if option == 'debug_mode':
+			self.toggleDebug()
+
+		# actualisation du buffer de configview
+		the_file = open(CONFIG_FILE, "r")
+		self.myConfigBuf.set_text(the_file.read())	
+		
+		# sensibiliser le bouton Actualiser
+		if not option in ['debug_mode', 'tif2j2k', 'j2k2mxf']:
+			self.updatePrevBtn.set_sensitive(True)	
+			
+		# mise à jour de la barre de statut
+		#CUR_STATE = "Option modifiée : " + option
+		CUR_STATE = " " + option + " -> " + str(value)
+		self.updateStatusBar(CUR_STATE, change=True)
+	
+	def updateStatusBar(self, msg=CUR_STATE, change=False):
+		"""Updates the message on the statusbar. A message can be provided,
+		and if change is set to True (i.e. something has been modified) then
+		an appropriate symbol [*] is shown beside filename."""
+		contextID = self.statusBar.get_context_id("")
+
+		self.statusBar.pop(contextID)
+
+		if not msg:
+			msg = "%s %s" % (CUR_STATE or "Rien à signaler", "[*]" if change else "")
+		elif change:
+			msg = "[*]" + msg
+
+		self.statusBar.push(contextID, msg)
+
+	def showPrefs(self, action=None):
+		"""Just open options tab that contains the textview
+		Used by a menu command"""
+		self.notebook.set_current_page(0)
+
+	def toggleDebug(self, action=None):
+		"""Various things to do when toggling debug mode"""
+		if Prefs['debug_mode'] == 'on':
+			self.j2kLabel.show()
+			self.wdgtJ2kConv.show()
+			self.mxfLabel.show()
+			self.wdgtMxfConv.show()
+		else:
+			self.j2kLabel.hide()
+			self.wdgtJ2kConv.hide()
+			self.mxfLabel.hide()
+			self.wdgtMxfConv.hide()
+
+	def configOverWrite(self, widget=None):
+		"""Save edited config file after a backup of the previous state and reload configuration"""
+		# enregistrer un backup du fichier courant (qui ne doit pas être écrasé en cas de double enregistrement)
+		# enregistrer le buffer à la place du fichier courant
+		# initPrefs()
+		# actualiser l'état des widgets d'options
+		# après un enregistrement, activer un bouton pour récupérer l'état précédent
+		infoDialog(msg="Not implemented yet")
+		
+	def configKeepUnchanged(self, button=None):
+		""" """
+		the_file = open(CONFIG_FILE, "r")
+		self.myConfigBuf.set_text(the_file.read())
+		
+	###################################################
+	
+	########## SOURCE FILES TAB
+	
+	###################################################
+
+	def createFilesWidgets(self):
+		"""List and manage files in source directory"""
+		
+		self.filesTable = gtk.Table(rows = 3, columns = 3)
+		self.filesTable.set_row_spacings(10)
+		self.filesTable.set_col_spacings(5)
+		
+		###### Label du treeview
+		createLabel(self.filesTable, "Sélectionner des fichiers à convertir", 
+			gridX=1, gridY=0, xExpand=False, yExpand=False, yPadding=15)
+
+		###### Actions possibles
+
+		self.botButtons = gtk.HButtonBox()
+		#self.botButtons.set_layout(gtk.BUTTONBOX_EDGE)
+		# bouton carton
+		self.btnCarton = gtk.Button("Carton", stock=None, use_underline=False)
+		self.btnCarton.connect("released", self.prepCarton)
+		# bouton diapo
+		self.btnDiapo = gtk.Button("Diaporama", None, False)
+		self.btnDiapo.connect("released", self.prepDiapo)
+		# bouton carton sonore
+		self.btnCarSon = gtk.Button("Carton sonore", None, False)
+		self.btnCarSon.connect("released", self.prepAudioCarton)
+		# bouton diaporama sonore
+		self.btnDiaSon = gtk.Button("Diaporama sonore", None, False)
+		self.btnDiaSon.connect("released", self.prepAudioDiapo)
+		# bouton bouton video
+		self.btnVideo = gtk.Button("Video", None, False)
+		self.btnVideo.connect("released", self.prepVideo)
+
+		self.botButtons.pack_start(self.btnCarton, expand=True, fill=True)
+		self.botButtons.pack_start(self.btnDiapo, expand=True, fill=True)
+		self.botButtons.pack_start(self.btnCarSon, expand=True, fill=True)
+		self.botButtons.pack_start(self.btnDiaSon, expand=True, fill=True)
+		self.botButtons.pack_start(self.btnVideo, expand=True, fill=True)
+
+		self.botButtons.set_homogeneous(True)
+		self.filesTable.attach(self.botButtons, 1,2,2,3, xoptions=gtk.FILL, yoptions=gtk.FILL)
+
+
+		###### Workspace contents (liste des fichiers sources)
+		
+		self.filesStore = self.scanSources()
+		
+		# si la liste est vide
+		if len(self.filesStore) == 0:
+			self.emptystore = gtk.TextView()
+			empty_buffer = self.emptystore.get_buffer()
+			empty_buffer.insert_at_cursor("Ajouter des fichiers")
+			self.emptystore.set_editable(False)
+			self.filesTable.attach(self.emptystore, 1,2,1,2, 			
+				xoptions=gtk.EXPAND, yoptions=gtk.EXPAND, xpadding=5, ypadding=5)
+			# sensitivité du bouton supprimer
+			self.delBtn.set_sensitive(False)
+		# si la liste n'est pas vide
+		else:
+			self.createFilesTreeView()
+			self.filesTreeView.set_model(self.filesStore)
+			self.filesTable.attach(self.filesTreeView, 1,2,1,2, 
+				xoptions=gtk.FILL, yoptions=gtk.FILL, xpadding=5, ypadding=5)
+		# init checked files
+		self.checked_files = []
+		
+		###### Boutons de gestion des fichiers
+		self.topButtons = gtk.Table(rows=4, columns=1, homogeneous=False)
+		
+		# bouton ajouter
+		self.addBtn = gtk.Button("Ajouter", gtk.STOCK_ADD, False) 
+		self.topButtons.attach(self.addBtn, 0,1,0,1, xoptions=gtk.FILL, yoptions=gtk.SHRINK, xpadding=5, ypadding=5)
+		self.addBtn.connect("released", self.addFileDialog)
+		
+		# bouton supprimer
+		self.delBtn = gtk.Button("Supprimer", gtk.STOCK_REMOVE, False)
+		self.topButtons.attach(self.delBtn, 0,1,1,2, xoptions=gtk.FILL, yoptions=gtk.SHRINK, xpadding=5, ypadding=5)
+		self.delBtn.connect("released", self.removeFileFromSource)
+		
+		# bouton rafraichir
+		self.refreshBtn = gtk.Button(label="Rafraichir", stock=gtk.STOCK_REFRESH, use_underline=False)
+		self.topButtons.attach(self.refreshBtn, 0,1,4,5, xoptions=gtk.FILL, yoptions=gtk.FILL, xpadding=5, ypadding=5)
+		self.refreshBtn.set_alignment(xalign=0.0, yalign=1.0)
+		self.refreshBtn.connect("released", self.refreshWorkspace)
+
+		## Rangée des boutons de fichiers
+		self.filesTable.attach(self.topButtons, 2,3,1,2, xoptions=gtk.FILL, yoptions=gtk.FILL)
+		
+	######## Workspace management functions
+
+	def createFilesTreeView(self):
+		self.filesTreeView = gtk.TreeView()
+		self.cell = gtk.CellRendererText()
+		self.cellchk = gtk.CellRendererToggle()
+		self.cellchk.connect("toggled", self.fileCheck, self.filesStore)
+		self.cellico = gtk.CellRendererPixbuf()
+		# column 0 : check boxes
+		self.fTVcol0 = gtk.TreeViewColumn(" -")
+		self.filesTreeView.append_column(self.fTVcol0)
+		self.fTVcol0.pack_start(self.cellchk, True)
+		self.fTVcol0.add_attribute(self.cellchk, 'active', 0)
+		self.fTVcol0.set_sort_column_id(0)
+		self.fTVcol0.set_resizable(False)		
+		# column 1 : icons
+		self.fTVcol1 = gtk.TreeViewColumn(" -")
+		self.filesTreeView.append_column(self.fTVcol1)
+		self.fTVcol1.pack_start(self.cellico, True)
+		self.fTVcol1.add_attribute(self.cellico, 'pixbuf', 1)
+		self.fTVcol1.set_resizable(True)
+		# column 2 : filenames
+		self.fTVcol2 = gtk.TreeViewColumn("Fichier")
+		self.filesTreeView.append_column(self.fTVcol2)
+		self.fTVcol2.pack_start(self.cell, True)
+		self.fTVcol2.add_attribute(self.cell, 'text', 2)
+		self.fTVcol2.set_sort_column_id(2)
+		self.fTVcol2.set_resizable(True)
+		# column 3 : filesizes
+		self.fTVcol3 = gtk.TreeViewColumn("Taille")
+		self.filesTreeView.append_column(self.fTVcol3)
+		self.fTVcol3.pack_start(self.cell, True)
+		self.fTVcol3.add_attribute(self.cell, 'text', 3)
+		self.fTVcol3.set_sort_column_id(3)
+		self.fTVcol3.set_resizable(True)
+		# column 4 : last modification times
+		self.fTVcol4 = gtk.TreeViewColumn("Modifié le")
+		self.filesTreeView.append_column(self.fTVcol4)
+		self.fTVcol4.pack_start(self.cell, True)
+		self.fTVcol4.add_attribute(self.cell, 'text', 4)
+		self.fTVcol4.set_sort_column_id(4)
+		self.fTVcol4.set_resizable(True)
+		# treeview options
+		self.filesTreeView.set_search_column(2)
+		self.filesTreeView.set_reorderable(True)
+		self.filesTreeView.set_grid_lines(True)
+		self.filesTreeView.set_rules_hint(True)
+		
+	def scanSources(self):
+		"""Get the usefull content of workspace and parse it"""
+		ws_list = glob.glob(WORKSPACE + '*')
+		list_img = []
+		list_aud = []
+		list_srt = glob.glob(WORKSPACE + '*.srt')
+		list_vid = []
+		list_src = []
+		
+		## On fait plusieurs passages pour regrouper les fichiers par mimetype
+		for myf in ws_list:
+			if not os.path.isdir(myf):
+				m = mimetypes.guess_type(myf, False)
+				if Regexp.look_img.match(str(m[0])) is not None:
+					list_img.append(myf)
+					list_src.append(myf)
+
+		for myf in ws_list:
+			if not os.path.isdir(myf):
+				m = mimetypes.guess_type(myf, False)
+				if Regexp.look_aud.match(str(m[0])) is not None:
+					list_aud.append(myf)
+					list_src.append(myf)
+
+		for myf in ws_list:
+			if not os.path.isdir(myf):
+				m = mimetypes.guess_type(myf, False)
+				if Regexp.look_vid.match(str(m[0])) is not None:
+					list_vid.append(myf)
+					list_src.append(myf)
+
+		for myf in ws_list:
+			if not os.path.isdir(myf):
+				if Regexp.look_srt.match(myf) is not None:
+					list_srt.append(myf)
+					list_src.append(myf)
+
+		# activation des boutons
+		if len(list_img) > 0:
+			#self.btnCarton.set_sensitive(True)
+			self.btnCarton.show()
+		if len(list_img) > 1:
+			#self.btnDiapo.set_sensitive(True)
+			self.btnDiapo.show()
+		if len(list_aud) > 0:
+			#self.btnCarSon.set_sensitive(True)
+			self.btnCarSon.show()
+			if len(list_img) > 1:
+				#self.btnDiaSon.set_sensitive(True)
+				self.btnDiaSon.show()
+		if len(list_vid) > 0:
+			#self.btnVideo.set_sensitive(True)
+			self.btnVideo.show()
+			
+		# Définition du listStore	
+		filesStore = gtk.ListStore(
+							gobject.TYPE_BOOLEAN, 
+							gtk.gdk.Pixbuf, 
+							gobject.TYPE_STRING, 
+							gobject.TYPE_STRING, 
+							gobject.TYPE_STRING)
+		
+		# Boucle des dossiers
+		
+		for this_file in list_src:
+
+			## Icon
+			if this_file in list_img:
+				icon = gtk.gdk.pixbuf_new_from_file_at_size(this_file, 24, 24)
+			elif this_file in list_aud:
+				icon = gtk.gdk.pixbuf_new_from_file_at_size(CONFIG_DIR + "icons/sound-on-pixshark.png", 20, 20)
+			elif this_file in list_vid:
+				icon = gtk.gdk.pixbuf_new_from_file_at_size(CONFIG_DIR + "icons/camera-pixshark.png", 20, 20)
+			
+			## File name		
+			basename = os.path.basename(this_file)
+			
+			## File size
+			size = float(os.path.getsize(this_file))
+			if size > 1073741824:
+				size /= 1073741824
+				size = str(round(size,2)) + ' G'
+			elif size > 1048576:
+				size /= 1048576
+				size = str(round(size,2)) + ' M'
+			elif size > 1024:
+				size/= 1024
+				size = str(round(size,2)) + ' k'
+			else:
+				size = str(size) + 'b'
+				
+			## Mod time
+			mod_time = os.path.getmtime(this_file)
+			mod_time = datetime.datetime.fromtimestamp(mod_time)
+			mod_time = mod_time.strftime('le %d/%m/%Y à %H:%M:%S')
+			
+			## Send to store
+			this_row = [False, icon, basename, size, mod_time]
+			filesStore.append(this_row)
+			
+			CUR_STATE = "La liste des fichiers sources est à jour."
+			self.updateStatusBar(msg=CUR_STATE)
+			
+		return filesStore
+		
+		
+	def addFileDialog(self, button):
+		"""Add one or more files to QuickDCP workspace"""
+
+		#### Filtre des fichiers sources
+		self.sourceFilter = gtk.FileFilter()
+		self.sourceFilter.add_mime_type('image/png')
+		self.sourceFilter.add_mime_type('image/jpeg')
+		self.sourceFilter.add_mime_type('image/gif')
+		self.sourceFilter.add_mime_type('image/tiff')
+		self.sourceFilter.add_mime_type('audio/wav')
+		self.sourceFilter.add_mime_type('video/quicktime')
+		self.sourceFilter.add_mime_type('video/avi')
+		# the subtitles problem...
+		self.sourceFilter.add_mime_type('video/subtitle')
+		self.sourceFilter.add_pattern('*.srt')
+		self.sourceFilter.add_pattern('*.sub')
+		self.sourceFilter.add_pattern('*.ttxt')
+
+		dialog = gtk.FileChooserDialog("Ajouter un fichier source", self,
+			gtk.FILE_CHOOSER_ACTION_OPEN, 
+			(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL, gtk.STOCK_OPEN, gtk.RESPONSE_ACCEPT))
+		dialog.set_select_multiple(True)
+		dialog.set_filter(self.sourceFilter)
+
+		if dialog.run() == gtk.RESPONSE_CANCEL:
+			dialog.destroy()
+
+		if dialog.run() == gtk.RESPONSE_ACCEPT:
+				
+			info = dialog.get_filenames()
+			#info = dialog.get_uris()
+			for this_file in info:
+				self.addFileToSource(this_file)
+			dialog.destroy()
+				
+	def addRecentDialog(self, button):
+		"""Choose a file to add from the recent pool"""
+		dialog = gtk.RecentChooserDialog("Sélectionner un fichier récemment utilisé", self, 
+			None, 
+			(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL, gtk.STOCK_OPEN, gtk.RESPONSE_ACCEPT))
+		dialog.set_select_multiple(True)
+		dialog.set_filter(self.sourceFilter)
+		
+		if dialog.run() == gtk.RESPONSE_ACCEPT:
+			info = dialog.get_filenames()
+			open_file(info)
+			
+		dialog.destroy()
+	
+	def addFileToSource(self, uri):
+		"""Add a selected file to the workspace contents, both physically and graphically"""
+		# on isole le basename
+		basename = os.path.basename(uri)
+		if not basename.isalnum():
+			basename = self.cleanString(basename, do_shell=True)
+			
+		# copie du fichier vers le dossier source
+		shutil.copyfile(uri, WORKSPACE + basename)
+		
+		# barre de défilement ou pourcentage pour les gros fichiers
+		# "Copie de n fichiers dans l'espace de travail."
+		
+		# gestion des erreurs
+		#sameFileError (copy a file where it is already)
+		#OSError (dest not writable)
+		
+		# mettre à jour le tree view
+		self.refreshWorkspace()
+		
+		self.delBtn.set_sensitive(True)
+	
+	def removeFileFromSource(self, button):
+		"""Remove one or more files from the workspace"""
+		if AUTOCLEAN in ['wash','vacuum']:
+			#confirmation de suppression
+			if len(self.checked_files) == 1:
+				msg_suppr = "Supprimer le fichier ?"
+			else:
+				msg_suppr = "Supprimer les " + str()+" fichiers ?"
+			if confirmDialog(msg=msg_suppr):
+				# boucle des fichiers selectionnés
+				count = 0
+				for cf in self.checked_files:
+					# suppression physique du fichier
+					try:
+						os.remove(WORKSPACE + cf)
+						count += 1
+					except:
+						errorDialog(msg="Echec de la suppression de " + cf + " !")
+				if count == 1:
+					CUR_STATE = "1 fichier supprimé"
+				else:
+					CUR_STATE = str(count) + " fichiers supprimés"
+				self.updateStatusBar(CUR_STATE, False)
+						
+		else:
+			# déplacement des fichiers
+			if not os.path.isdir(WORKSPACE + archives):
+				os.makedirs(WORKSPACE + archives)
+			count = 0
+			for cf in self.checked_files:
+				try:
+					# TODO : si le fichier existe déjà dans les archives,
+					# comparer les tailles des deux fichiers
+					shutil.move(WORKSPACE + cf, WORKSPACE + archives)
+					count += 1
+				except:
+					errorDialog(msg="Le déplacement de " + cf + " a échoué !")
+			if count == 1:
+				CUR_STATE = "1 fichier déplacé dans le dossier " + archives
+			else:
+				CUR_STATE =	str(count) + " fichiers déplacés dans le dossier " + archives
+			self.updateStatusBar(CUR_STATE, False)
+			
+		# mise a jour du workspace et des checked files (en cas d'erreur)
+		self.refreshWorkspace(keep_checked=True)
+		
+	def fileCheck(self, cell, path, store, *ignore):
+		"""This is called when a file is selected.
+		We add the file to the task list and lighten the
+		corresponding button(s)"""
+		if path is not None:
+			it = store.get_iter(path)
+			store[it][0] = not store[it][0]
+			if store[it][0] == True:
+				self.checked_files.append(store[it][2])
+			else:
+				popin = self.checked_files.index(store[it][2])
+				self.checked_files.pop(popin)
+			# gérer la sensitivité des boutons
+			self.btnCarton.set_sensitive(False)
+			self.btnDiapo.set_sensitive(False)
+			self.btnCarSon.set_sensitive(False)
+			self.btnDiaSon.set_sensitive(False)
+			self.btnVideo.set_sensitive(False)
+			dia = False; dia2 = False
+			# premiere boucle pour les images
+			for g in self.checked_files:
+				m = mimetypes.guess_type(g, False)
+				if Regexp.look_img.match(m[0]) is not None:
+					if dia:
+						self.btnDiapo.set_sensitive(True)
+						self.btnCarton.set_sensitive(False)
+					else:
+						self.btnCarton.set_sensitive(True)
+						dia = True
+			# seconde boucle pour l'audio et la video		
+			for g in self.checked_files:
+				if Regexp.look_aud.match(m[0]) is not None:
+					if dia:
+						self.btnDiaSon.set_sensitive(True)
+					else:
+						self.btnCarSon.set_sensitive(True)
+				elif Regexp.look_vid.match(m[0]) is not None:
+					self.btnVideo.set_sensitive(True)
+				
+	def refreshWorkspace(self, button=None, keep_checked=False):
+		""" Removes and replaces the listStore in the files treeView"""
+		newStore = self.scanSources()
+		try:
+			self.filesTreeView.set_model(newStore)
+		except AttributeError:
+			# on crée le TreeView s'il n'existe pas déjà
+			self.createFilesTreeView()
+			self.filesTable.remove(self.emptystore)
+			self.filesTable.attach(self.filesTreeView, 0,1,1,2, 
+				xoptions=gtk.FILL, yoptions=gtk.FILL, xpadding=5, ypadding=5)	
+			self.filesTreeView.set_model(newStore)
+		except:
+			raise	
+			
+		# recocher les éléments précédemment selectionnés
+		if keep_checked:
+			#~ for cf in self.checked_files:
+				#~ if os.path.exists(WORKSPACE + cf):
+					#~ self.fileCheck(path=WORKSPACE + cf, store=self.filesStore)
+			pass
+		else:
+			self.checked_files = []
+									
+	def cleanWorkspace(self, action=None):
+		"""Clean up your house"""
+		# remove txt files
+		# remove logs
+		# remove tmp images, sound and video
+		# move source files in proper directories
+		pass
+		
+	###################################################
+	
+	########## PREVIEW TAB
+	
+	###################################################
+		
+	def createPreviewWidgets(self):
+		"""Initiate preview tab in main window"""
+		
+		# Table
+		self.previewTable = gtk.Table(rows = 5, columns = 2, homogeneous = False)
+		self.previewTable.set_row_spacings(5)
+		self.previewTable.set_col_spacings(5)
+				
+		# Top Horizontal ButtonBox
+		self.prevTopTable = gtk.Table(rows = 1, columns = 3, homogeneous = False)
+		self.previewTable.attach(self.prevTopTable, 0,1,0,1, 
+			xoptions=gtk.FILL, yoptions=gtk.SHRINK, xpadding=10, ypadding=10)
+		
+		# Real DCP name
+		self.crtnDcpName = createLabel(self.prevTopTable, text="", 
+			gridX=0, gridY=0, xExpand=True, yPadding=10)
+		self.crtnDcpName.set_alignment(0.5,0.8)
+
+		## Middle Horizontal ButtonBox
+		self.prevMidHBox = gtk.HButtonBox()
+		self.prevMidHBox.set_homogeneous(False)
+		self.previewTable.attach(self.prevMidHBox, 0,1,1,2, 
+			xoptions=gtk.FILL, yoptions=gtk.SHRINK, xpadding=10, ypadding=10)
+			# Update Button
+		self.updatePrevBtn = gtk.Button(label="Rafraichir", stock=gtk.STOCK_REFRESH, use_underline=False)
+		self.updatePrevBtn.connect("released", self.updatePreview)
+		self.prevMidHBox.pack_start(self.updatePrevBtn, expand=True, fill=False)
+			# Multiply button
+		self.btnContinuer = gtk.Button("Générer la séquence")
+		self.btnContinuer.set_alignment(xalign=0.5, yalign=0.5)
+		self.btnContinuer.set_sensitive(False)
+		self.btnContinuer.connect("released", self.multiplyTiff)
+		self.prevMidHBox.pack_start(self.btnContinuer)
+
+		###### Champ image/terminal
+		# cadre aux dimensions du format divisé par 4
+		self.myScreen = gtk.Frame()
+		self.myScreen.set_shadow_type(gtk.SHADOW_IN)
+		self.myScreen.set_size_request((mx_width/4)+12, (mx_height/4)+12)
+		self.previewTable.attach(self.myScreen, 0,1,2,3, 
+			xoptions=gtk.FILL, yoptions=gtk.FILL, xpadding=10, ypadding=0)
+		# label provisoire
+		cartonLabel = gtk.Label("Double cliquer sur un carton à droite \nou en générer de nouveaux depuis l'onglet Sources.")
+		cartonLabel.set_justify(gtk.JUSTIFY_CENTER)
+		self.myScreen.add(cartonLabel)
+
+		## Bottom Horizontal ButtonBox
+		self.prevBotBox = gtk.Table(rows=1, columns=4, homogeneous=False)
+		self.previewTable.attach(self.prevBotBox, 0,1,4,5, 
+			xoptions=gtk.FILL, yoptions=gtk.SHRINK, xpadding=10, ypadding=10)
+			# Label for basename
+		self.bnameLabel = gtk.Label("Nom de base : ")
+		self.prevBotBox.attach(self.bnameLabel, 0,1,0,1, xoptions=gtk.SHRINK, yoptions=gtk.SHRINK)
+		self.bnameLabel.set_alignment(xalign=0.0, yalign=0.5)
+			# Text entry for basename
+		self.bnameEntry = gtk.Entry(64)
+		self.bnameEntry.set_width_chars(20)
+		self.bnameEntry.set_text("")
+		self.bnameEntry.set_name("basename-entry")
+		self.bnameEntry.set_alignment(0.0)
+		#self.bnameEntry.connect("focus-out-event", self.updateBasename)
+		self.prevBotBox.attach(self.bnameEntry, 1,2,0,1, xoptions=gtk.SHRINK, yoptions=gtk.SHRINK)
+			# Okbutton for basename
+		self.bnameOkBtn = gtk.Button("ok")
+		self.bnameOkBtn.connect("released", self.updateBasename)
+		self.bnameOkBtn.set_alignment(0.0, 0.5)
+		self.prevBotBox.attach(self.bnameOkBtn, 2,3,0,1, xoptions=gtk.SHRINK, yoptions=gtk.SHRINK)
+
+			# Text Toggle checkbox
+		self.toggleTxt = gtk.CheckButton("Activer le texte")
+		self.toggleTxt.set_alignment(1.0,0.5)
+		self.toggleTxt.connect_object("toggled", self.changeOccurred, "text_toggle", self.toggleTxt)
+		self.prevBotBox.attach(self.toggleTxt, 4,5,0,1, xoptions=gtk.EXPAND, yoptions=gtk.SHRINK)
+
+		## Champ texte du carton
+		self.textBox = gtk.ScrolledWindow()
+		self.textBox.set_size_request((mx_width/4)+15, 50)
+		self.textBox.set_policy(gtk.POLICY_NEVER, gtk.POLICY_ALWAYS)
+		self.textView = gtk.TextView()
+		self.textBuff = self.textView.get_buffer()
+		self.textView.set_editable(True)
+		self.textView.set_wrap_mode(gtk.WRAP_WORD)
+		self.textBox.add(self.textView)
+		self.textBox.set_sensitive(False)
+		self.previewTable.attach(self.textBox, 0,1,5,6, 
+			xoptions=gtk.FILL, yoptions=gtk.SHRINK, xpadding=10, ypadding=10)
+		self.textBuff.connect("changed", self.saveText)
+		
+		###### Tree view des cartons préparés
+		# Label
+		createLabel(self.previewTable, text="Cartons déjà préparés", 
+			gridX=1, gridY=0, xExpand=True)
+		## Scrolled window for treeview
+		self.oldCartonsSw = gtk.ScrolledWindow()
+		self.oldCartonsSw.set_policy(gtk.POLICY_NEVER,gtk.POLICY_AUTOMATIC)
+		self.previewTable.attach(self.oldCartonsSw, 1,2,1,3,
+			xoptions=gtk.FILL, yoptions=gtk.FILL, xpadding=10, ypadding=10)
+			
+		self.deleteCrtn = gtk.Button("Supprimer la séléction",None, False)
+		self.selectDiapo = gtk.Button("Créer un diaporama", None, False)
+		
+		## Treeview
+		self.refreshCrtnStore()
+		
+						
+	def updatePreview(self, button=None):
+		"""Update the preview notebook page
+		according to the last action."""
+
+		if self.action == "diapo":
+			self.prepDiapo()
+		else:
+			self.prepCarton()
+		
+	def createCartonsTreeView(self):
+		self.crtnsTreeView = gtk.TreeView()
+		self.cell = gtk.CellRendererText()
+		self.crtn_cellchk = gtk.CellRendererToggle()
+		self.crtn_cellchk.connect("toggled", self.crtnCheck)
+		self.cell_thumb = gtk.CellRendererPixbuf()
+		# column 0 : check boxes
+		self.cTVcol0 = gtk.TreeViewColumn(" -")
+		self.crtnsTreeView.append_column(self.cTVcol0)
+		self.cTVcol0.pack_start(self.crtn_cellchk, True)
+		self.cTVcol0.add_attribute(self.crtn_cellchk, 'active', 0)
+		self.cTVcol0.set_sort_column_id(0)
+		self.cTVcol0.set_resizable(False)		
+		# column 1 : icons
+		self.cTVcol1 = gtk.TreeViewColumn(" -")
+		self.crtnsTreeView.append_column(self.cTVcol1)
+		self.cTVcol1.pack_start(self.cell_thumb, True)
+		self.cTVcol1.add_attribute(self.cell_thumb, 'pixbuf', 1)
+		self.cTVcol1.set_resizable(False)
+		# column 2 : filenames
+		self.cTVcol2 = gtk.TreeViewColumn("Chemin")
+		self.crtnsTreeView.append_column(self.cTVcol2)
+		#~ self.cTVcol2.pack_start(self.cell, True)
+		#~ self.cTVcol2.add_attribute(self.cell, 'text', 2)
+		self.cTVcol2.set_sort_column_id(2)
+		self.cTVcol2.set_resizable(True)
+		#~ # column 3 : filesizes
+		#~ self.cTVcol3 = gtk.TreeViewColumn("Taille")
+		#~ self.crtnsTreeView.append_column(self.cTVcol3)
+		#~ self.cTVcol3.pack_start(self.cell, True)
+		#~ self.cTVcol3.add_attribute(self.cell, 'text', 3)
+		#~ self.cTVcol3.set_sort_column_id(3)
+		#~ self.cTVcol3.set_resizable(True)
+		#~ # column 4 : last modification times
+		#~ self.cTVcol4 = gtk.TreeViewColumn("Modifié le")
+		#~ self.crtnsTreeView.append_column(self.cTVcol4)
+		#~ self.cTVcol4.pack_start(self.cell, True)
+		#~ self.cTVcol4.add_attribute(self.cell, 'text', 4)
+		#~ self.cTVcol4.set_sort_column_id(4)
+		#~ self.cTVcol4.set_resizable(True)
+		
+		# treeview options
+		self.crtnsTreeView.set_headers_visible(False)
+		self.crtnsTreeView.set_reorderable(True)
+		self.crtnsTreeView.set_grid_lines(False)
+		self.crtnsTreeView.set_rules_hint(False)
+
+		self.crtnsTreeView.connect("row-activated", self.showCarton)	
+		
+	def refreshCrtnStore(self, keep_checked=False):
+		""" Removes and replaces the listStore in the cartons treeView"""
+		newCrtnList = glob.glob(WORKSPACE + '.tmp_tif/*.tiff')
+		# if list is empty
+		if len(newCrtnList) == 0:
+			self.cleanWindow(self.oldCartonsSw)
+			nocarton = gtk.Label("aucun")
+			self.oldCartonsSw.add_with_viewport(nocarton)
+		# if not
+		else:
+			# create a new store
+			newStore = gtk.ListStore(
+							gobject.TYPE_BOOLEAN, 
+							gtk.gdk.Pixbuf,
+							gobject.TYPE_STRING)
+			for cpath in newCrtnList:
+				icon = gtk.gdk.pixbuf_new_from_file_at_size(cpath, 100,50)
+				this_row = [False, icon, cpath]
+				newStore.append(this_row)
+			
+			try:
+				self.crtnsTreeView.set_model(newStore)
+			except:
+				# on crée le TreeView s'il n'existe pas déjà
+				self.cleanWindow(self.oldCartonsSw)
+				self.createCartonsTreeView()
+				self.oldCartonsSw.add_with_viewport(self.crtnsTreeView)	
+				self.crtnsTreeView.set_model(newStore)
+			
+			# recocher les éléments précédemment selectionnés
+			#~ if keep_checked:
+				#~ for cf in self.checked_crtns:
+					#~ file_check(path=WORKSPACE + cf, store=self.filesStore)
+
+			# Afficher l'onglet aperçu
+			self.previewTable.show()
+
+	def crtnCheck(self, cell, path, store, *ignore):
+		"""This is called when a file is selected.
+		We add the file to the task list and lighten the
+		corresponding button(s)"""
+		if path is not None:
+			it = store.get_iter(path)
+			store[it][0] = not store[it][0]
+			if store[it][0] == True:
+				self.checked_crtns.append(store[it][2])
+			else:
+				popin = self.checked_crtns.index(store[it][2])
+				self.checked_crtns.pop(popin)
+			# gérer la sensitivité des boutons
+			self.btnCarton.set_sensitive(False)
+			self.btnDiapo.set_sensitive(False)
+			self.btnCarSon.set_sensitive(False)
+			self.btnDiaSon.set_sensitive(False)
+			self.btnVideo.set_sensitive(False)
+			dia = False; dia2 = False
+			# premiere boucle pour les images
+			for g in self.checked_crtns:
+				m = mimetypes.guess_type(g, False)
+				if Regexp.look_img.match(m[0]) is not None:
+					if dia:
+						self.btnDiapo.set_sensitive(True)
+						self.btnCarton.set_sensitive(False)
+					else:
+						self.btnCarton.set_sensitive(True)
+						dia = True
+			# seconde boucle pour l'audio et la video		
+			for g in self.checked_crtns:
+				if Regexp.look_aud.match(m[0]) is not None:
+					if dia:
+						self.btnDiaSon.set_sensitive(True)
+					else:
+						self.btnCarSon.set_sensitive(True)
+				elif Regexp.look_vid.match(m[0]) is not None:
+					self.btnVideo.set_sensitive(True)
+				
+
+	########## Actions
+	
+	# Carton
+	def prepCarton(self, button=None):
+		"""Preparing an image and its preview"""
+		
+		self.action = 'carton'
+
+		# nettoyage des actions précédentes
+		self.cleanPreview()
+		
+		# actualistation de l'écran de terminal	
+		#self.myScreen.set_size_request((mx_width/4)+15, (mx_height/4)+15)
+		self.myTerminal = ShellProc()
+		self.myScreen.add(self.myTerminal)
+
+		# le fichier selectionné
+		img_path = self.checked_files[0]
+		
+		# on vérifie qu'on traite bien une image
+		m = mimetypes.guess_type(img_path, False)
+		if Regexp.look_img.match(m[0]) is not None:
+				
+			self.cleanWindow(self.myScreen)
+			
+			## basename
+			
+			# get file basename without extension
+			self.file_name = os.path.basename(img_path)
+			self.b_name = os.path.splitext(self.file_name)[0]
+			self.cur_crtn_dcp_name = self.mkDcpName(self.b_name)
+			# nom du DCP final
+			self.crtnDcpName.set_text(self.cur_crtn_dcp_name)
+			self.crtnDcpName.show()
+				
+			# a partir de la on peut rendre le champ texte actif
+			self.textBox.set_sensitive(True)
+			
+			## gestion du texte				
+			self.manageTexte()
+
+			# update basename text entry
+			self.bnameEntry.set_text(self.b_name)
+			
+			# on bascule sur l'onglet preview
+			self.previewTable.show()
+			self.notebook.set_current_page(2)
+
+			## update du fichier de conf du shell
+			self.writeShellConfig(self.b_name, file_name=self.file_name, action=self.action)
+			
+			## ouvrir un terminal pour le suivi des opérations	
+				
+			self.myTerminal = ShellProc()
+			self.myScreen.add(self.myTerminal)
+			self.myScreen.show_all()
+			self.myTerminal.process(bname=self.b_name, cmd='conv_jpg2tif', arg1='img_path', action=self.action, term='off')
+
+
+	def prepDiapo(self, button=None):
+		"""Selecting images to process"""
+		
+		self.action = 'diapo'
+		
+		# nettoyage des actions précédentes
+		self.cleanPreview()
+		
+		# actualistation des dimensions de format	
+		self.myLiftedW.set_size_request((mx_width/4)+10, (mx_height/4)+10)
+
+		# afficher l'onglet d'aperçu
+		self.previewTable.show()
+
+		self.action="diapo"
+		# on bascule sur l'onglet preview
+		self.notebook.set_current_page(2)
+
+		# aperçus successifs des fichiers selectionnés
+		for that_file in self.checked_files:
+			# on vérifie qu'on traite bien une image
+			m = mimetypes.guess_type(that_file, False)
+			if Regexp.look_img.match(m[0]) is not None:
+
+				# get file basename without extension
+				self.file_name = os.path.basename(that_file)
+				self.b_name = os.path.splitext(self.file_name)[0]
+
+				self.prepCarton(WORKSPACE + that_file)
+				job_done = True
+
+		
+		if not job_done:
+			warningDialog(msg="Aucun des fichiers sélectionnés ne permet de réaliser un carton.")
+
+	def prepAudioCarton(self, button=None):
+		""" """
+		# get file basename without extension
+		self.file_name = os.path.basename(that_file)
+		self.b_name = os.path.splitext(self.file_name)[0]
+
+		infoDialog(msg="Cooking an audio")
+
+	def prepAudioDiapo(self, button=None):
+		""" """
+		# get file basename without extension
+		self.file_name = os.path.basename(that_file)
+		self.b_name = os.path.splitext(self.file_name)[0]
+				
+		infoDialog(msg="Cooking a diaporama audio")
+	
+	# Multiplying a queue of tiffs
+	def multiplyQueue(self, button=None):
+		"""Get all prepared tiffs and sequence them"""
+		# Récupérer tous les tiffs à traiter pour la boucle
+		todo_list = glob.glob(WORKSPACE + '.tmp_tif/*.tiff')
+		
+		for ceci in todo_list:
+			multiplyTiff(bname=os.path.basename(ceci))
+							
+	# Multiply
+	def multiplyTiff(self, button=None):
+		"""When producing still images DCP, we need to multiply them
+		according to the target duration"""
+		
+		self.action = 'multiply'
+		
+		## Création d'un dossier pour recevoir la sequence de tiffs
+		tiff_dir = WORKSPACE + '.tmp_tif/' + self.b_name + '/'
+		if not os.path.isdir(tiff_dir):
+			os.makedirs(tiff_dir)
+					
+		## fichier de conf du shell
+		if not os.path.exists(WORKSPACE + '.tmp_txt/' + self.seq_name + '-conf.sh'):
+			self.writeShellConfig(self.seq_name, file_path=self.seq_path)
+
+		# Nettoyage de la fenetre (le frame de self.screenTable)
+		self.cleanWindow(self.seqViewerFrame)
+		self.echelle.hide()
+
+		# Actualistation de l'écran de terminal	
+		self.seqViewerFrame.set_size_request((mx_width/4)+12, (mx_height/4)+12)
+		self.seqVTerminal = ShellProc()
+		self.seqViewerFrame.add(self.seqVTerminal)
+
+		self.screenTable.show()
+		self.notebook.set_current_page(3)
+		
+		## Ouverture d'un shell process
+		
+		self.seqVTerminal.process(bname=self.b_name, cmd='multiply_tiff', action='multiply')
+
+	# Video
+	def prepVideo(self, button=None):
+		"""Prepare the preview tab, extract tiff images and wav tracks 
+		from selected video"""
+		
+		for that_file in self.checked_files:
+			# on vérifie qu'on a bien une video
+			m = mimetypes.guess_type(that_file, False)
+			if Regexp.look_vid.match(m[0]) is not None:
+				
+				self.action = 'video'
+				
+				# get file basename without extension
+				self.file_name = os.path.basename(that_file)
+				self.b_name = os.path.splitext(self.file_name)[0]
+				
+				## Création d'un dossier pour les tiffs
+				tiff_dir = WORKSPACE + '.tmp_tif/' + self.b_name + '/'
+				if not os.path.isdir(tiff_dir):
+					os.makedirs(tiff_dir)
+							
+				## Comment déterminer n_max ?
+				# Penser a compter le nombre total d'images de la video
+				# et enregistrer n_max dans le fichier de config shell
+				
+				# Nettoyage de la fenetre (le frame de self.screenTable)
+				self.cleanWindow(self.seqViewerFrame)
+
+				# Actualistation de l'écran de terminal	
+				self.seqViewerFrame.set_size_request((mx_width/4)+12, (mx_height/4)+12)
+				self.seqVTerminal = ShellProc()
+				self.seqViewerFrame.add(self.seqVTerminal)
+
+				# on passe sur l'onglet de sequence
+				self.seqTable.show_all()
+				self.notebook.set_current_page(3)
+				
+				## Ouverture d'un shell process
+				
+				## création du fichier de conf du shell
+				self.writeShellConfig(self.b_name, file_name=self.file_name, action=self.action)
+
+				## Extraction de la video
+				self.seqVTerminal.process(bname=self.b_name, cmd='conv_mov2tif', arg1=self.file_name, action='video')
+				
+				# Avant de faire le son il faut récuperer n_max
+				n_max = len(glob.glob(WORKSPACE + '.tmp_tif/' + self.b_name + '/*'))
+				
+				## Extraction du son s'il y en a
+				#~ self.seqVTerminal.process(bname=b_name, cmd='conv_mov2wav', action='audio')
+				
+
+	######## Cooking stuff
+
+	def cleanPreview(self, action=None):
+		"""Clean up your room"""
+		
+		# nettoyage de la fenetre
+		self.cleanWindow(self.myScreen)
+
+		# destruction des images intermédiaires
+		for png in glob.glob(WORKSPACE + '.tmp_img/*.png'):
+			os.remove(png)
+		
+		# nettoyage du nom de DCP précédent
+		try:
+			if self.crtnDcpName:
+				self.crtnDcpName.set_text("")
+		except AttributeError:
+			pass
+			
+		# nettoyage du champ texte
+		#~ try:
+			#~ if self.textBuff:
+				#~ self.textBuff.set_text("")
+		#~ except AttributeError:
+			#~ pass
+
+		# nettoyage de basename textEntry
+		try:
+			if self.bnameEntry:
+				self.bnameEntry.set_text("")
+		except AttributeError:
+			pass
+
+	def showCarton(self, tree=None, path=None, col=None, bname=None):
+		# Récupérer le nom du carton à partir du path (index de rangée) ou du basename
+		if path is not None:
+			the_row = path[0]
+			store = tree.get_model()
+			it = store.get_iter(the_row)
+			f_path = store[it][2]
+			# variables globales
+			self.file_name = os.path.basename(f_path)
+			self.b_name = os.path.splitext(self.file_name)[0]
+		elif bname is not None:
+			self.b_name = bname
+			self.file_name = bname + '.tiff'
+			f_path = WORKSPACE + '.tmp_tif/' + self.file_name
+		else:
+			warningDialog(msg="Aucune référence valable de carton n'est fournie !")
+
+		if os.path.exists(f_path):
+			# Préparation de l'image
+			myPixBuf = gtk.gdk.pixbuf_new_from_file(f_path)
+			scaledPbf = myPixBuf.scale_simple(mx_width/4, mx_height/4, gtk.gdk.INTERP_BILINEAR)
+			self.myPreview = gtk.Image()
+			self.myPreview.set_from_pixbuf(scaledPbf)
+			# Affichage
+			self.cleanWindow(self.myScreen)
+			self.mySW = gtk.ScrolledWindow()
+			self.mySW.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+			self.myScreen.add(self.mySW)
+			self.mySW.add_with_viewport(self.myPreview)
+			self.mySW.set_size_request((mx_width/4)+10, (mx_height/4)+10)
+			self.myScreen.show_all()
+			## DCP name
+			self.crtnDcpName.set_text(self.mkDcpName(self.b_name))
+			self.crtnDcpName.show()
+			## Basename entry
+			self.bnameEntry.set_text(self.b_name)
+			## Text
+			self.manageTexte()
+			## Action
+			self.action = 'carton'
+			## Bouton Multiplier
+			self.btnContinuer.set_sensitive(True)
+			
+		else:
+			warningDialog(msg="Le carton " + f_path + " n'existe pas !")
+
+						
+	def cleanWindow(self, window):
+		"""Remove all children from a window"""
+		clean_window = window.get_children()
+		for wid in clean_window:
+			window.remove(wid)
+
+	def mkDcpName(self, name):
+		""" """
+		# basename
+		my_dcp = name
+		# categorie
+		my_dcp += "_" + str(Prefs['categorie'])
+		# format
+		if str(Prefs['format']) == 'Full':
+			fmt = C
+		else:
+			fmt = str(Prefs['format'])[:1]
+		my_dcp += "_" + fmt
+		# langue
+		
+		# resolution
+		my_dcp += "_" + str(Prefs['resolution'])
+		# issuer
+		my_dcp += "_" + str(Prefs['issuer_short'])
+		# majuscules
+		my_dcp = my_dcp.upper()
+		
+		return my_dcp
+		
+	def updateBasename(self, button=None, *ignore):
+		"""update basename in related files and directories"""
+		## base name
+		old_bname = self.b_name
+		new_bname =  self.bnameEntry.get_text()
+		
+		## Vérifier que le basename n'existe pas déjà sur le disque
+		if os.path.exists(WORKSPACE + '.shell_logs/' + new_bname + '.log'):
+			if confirmDialog(msg="Le projet " + new_bname + " existe déjà.\nSouhaitez-vous l'écraser ?"):
+				pass
+			else:
+				return
+		
+		self.b_name = new_bname
+
+		## file name
+		old_file = self.file_name
+		endofname = old_file[len(old_bname):]
+		self.file_name = self.b_name + endofname
+		
+		## rename source file
+		shutil.move(WORKSPACE + old_file, WORKSPACE + self.file_name)
+		
+		## rename tiff file
+		shutil.move(WORKSPACE + '.tmp_tif/' + old_bname + '.tiff', WORKSPACE + '.tmp_tif/' + self.b_name + '.tiff')
+		
+		## text file
+		if os.path.exists(WORKSPACE + '.tmp_txt/' + old_bname + '.txt'):
+			shutil.move(WORKSPACE + '.tmp_txt/' + old_bname + '.txt', WORKSPACE + '.tmp_txt/' + self.b_name + '.txt')
+
+		## log
+		log_dir = WORKSPACE + '.shell_logs/'
+		if os.path.exists(log_dir + old_bname + '.log'):
+			shutil.move(log_dir + old_bname + '.log', log_dir + self.b_name + '.log')
+		
+		## start_time
+		if os.path.exists(WORKSPACE + '.tmp_' + old_bname + '_start'):
+			shutil.move(WORKSPACE + '.tmp_' + old_bname + '_start', WORKSPACE + '.tmp_' + self.b_name + '_start')
+		
+		## rename tiff collection
+		old_dir = WORKSPACE + '.tmp_tif/' + old_bname
+		if os.path.isdir(old_dir):
+			for of in glob.glob(old_dir):
+				tmpname = os.path.basename(of)
+				sufx = tmpname[len(old_bname):]
+				shutil.move(of, WORKSPACE + '.tmp_tif/' + old_dir + '/' + self.b_name + sufx)
+			shutil.move(old_dir, WORKSPACE + '.tmp_tif/' + self.b_name)
+		## rename j2k collection if any
+		old_dir = WORKSPACE + '.tmp_j2k/' + old_bname
+		if os.path.isdir(old_dir):
+			for of in glob.glob(old_dir):
+				tmpname = os.path.basename(of)
+				sufx = tmpname[len(old_bname):]
+				shutil.move(of, WORKSPACE + '.tmp_j2k/' + old_dir + '/' + self.b_name + sufx)
+			shutil.move(old_dir, WORKSPACE + '.tmp_j2k/' + self.b_name)
+		
+		## dcp_name
+		self.cur_crtn_dcp_name = self.mkDcpName(self.b_name)
+		self.crtnDcpName.set_text(self.cur_crtn_dcp_name)
+		
+		## Treeviews
+		self.refreshCrtnStore()
+		self.refreshWorkspace(keep_checked=True)
+		self.refreshPendingJobs()
+				
+		## Mise à jour de la barre de statut
+		CUR_STATE = "Nom de base modifié : " + old_bname + " -> " + self.b_name
+		self.updateStatusBar(change=True)
+
+	def saveText(self, widget=None):
+		"""Write the textbuffer of preview page in a file
+		This is called whenever the text buffer is modified"""
+		try:
+			if self.b_name:
+				d = WORKSPACE + '.tmp_txt/'
+				t = self.textBuff.get_text(self.textBuff.get_start_iter(), self.textBuff.get_end_iter())
+				if len(t) > 0:
+					if not os.path.isdir(d):
+						os.makedirs(d)
+					f = open(d + self.b_name + '.txt', 'w')
+					f.write(str(t))
+					f.close()
+				elif os.path.exists(d + self.b_name + '.txt'):
+					os.remove(d + self.b_name + '.txt')
+		except:
+			pass
+		
+	def manageTexte(self, button=None):
+		"""Activate or deactivate text in previews and DCP
+		and retrieve some text if available for the requested preview.
+		This is called by changeOccured when toggle button is clicked
+		but also on init to synchronize option button and preview checkbox,
+		and again when opening or updating a preview."""
+		
+		if str(Prefs['crtn_text']) == 'on':
+			# on allume les boutons
+			self.wdgtTxtOn.set_active(0)
+			self.toggleTxt.set_active(True)
+			
+			# on affiche le champ texte	
+			self.textBox.show()
+
+			# on voit s'il y a du texte à récupérer
+			try:
+				if self.b_name:
+					# récupérer un éventuel texte attaché à l'image
+					if os.path.exists(WORKSPACE + '.tmp_txt/' + self.b_name + '.txt'):
+						f = open(WORKSPACE + '.tmp_txt/' + self.b_name + '.txt', 'r')
+						self.textBuff.set_text(f.read())
+						f.close()
+			except:
+				pass
+				
+				
+		else:
+			# on éteint les boutons
+			self.wdgtTxtOn.set_active(1)
+			self.toggleTxt.set_active(False)
+
+			# on cache le champ texte
+			self.textBox.hide()
+					
+
+	########## Shell Callbacks			
+
+	def shellCallbacks(self, case='', name='', result=None, retour=None):
+		"""This is called by a ShellProc process when it closes."""
+
+		## Sortie de préparation d'un carton
+		if case == 'carton':
+			## affichage d'un aperçu de carton	
+			self.showCarton(bname=name)	
+							
+			## Liste des cartons préparés
+			self.refreshCrtnStore(keep_checked=True)
+			
+			## Barre de statut
+			CUR_STATE = "Aperçu à jour"
+			self.updateStatusBar()
+				
+		## Sortie d'une multiplication de tiffs
+		if case == 'multiply':
+			
+			## Affichage d'une image de la sequence
+			n_max = int(Prefs['framerate']) * int(Prefs['crtn_laps'])
+
+			if os.path.exists(WORKSPACE + '.tmp_tif/' + name + '/' + name + '_' + str(n_max) + '.tiff'):
+	
+				self.sequenceViewer(name=name, length=n_max, seq_type='tiff', pic=n_max/10)
+				self.echelle.show()
+				self.refreshPendingJobs
+				
+				
+		## Sortie d'une extraction de video
+		if case == 'video':
+			tiff_dir = WORKSPACE + '.tmp_tif/' + name + '/'
+			## Affichage d'une image de la sequence
+			n_max = len(glob.glob( tiff_dir + '*'))
+	
+			if os.path.exists(tiff_dir + name + '_*' + str(n_max) + '.tiff'):
+				self.sequenceViewer(name=name, length=n_max, seq_type='tiff', pic=n_max/10)
+				self.refreshPendingJobs
+				
+		if case == 'audio':
+			pass
+		
+		if case == 'tif2j2k':
+			# vérification des j2k (TODO !)			
+			if result == 0:
+				self.seq_name = name
+				self.seq_type = 'j2k'
+				self.action = 'j2k2mxf'
+				self.refreshPendingJobs(keep_checked=True)
+				self.startDCPcreation()
+				
+			else:
+				warningDialog(msg="Echec de conversion tiff -> j2k :\n Result = " + str(result))
+		
+		if case == 'j2k2mxf':
+			# vérification des mxf (TODO !)
+			if result == 0:
+				self.seq_name = name
+				self.seq_type = 'mxf'
+				self.action = 'mxf2dcp'
+				self.startDCPcreation()
+			else:
+				warningDialog(msg="Echec MXF :\n Result = " + str(result))
+			
+		if case == 'mxf2dcp':
+			# vérification du DCP (TODO !)
+			if result == 0:
+				# Nettoyer les fichiers start_time, txt, 
+				# les collections de tiffs et jpeg2000, les pistes son
+				# et les fichiers sources du workspace
+				# si on a conservé une config par dcp, la détruire ici
+				## Destruction ou archivage de la video d'origine
+				#~ if os.path.exists(WORKSPACE + '.tmp_tif/' + b_name + '.tiff'):
+					#~ if Prefs['autoclean'] in ['wash', 'vacuum']:
+						#~ os.remove(WORKSPACE + '.tmp_tif/' + b_name + '.tiff')
+					#~ else:
+						#~ if not os.path.isdir(WORKSPACE + 'archives/'):
+							#~ os.makedir(WORKSPACE + 'archives/')
+						#~ shutil.move(WORKSPACE + '.tmp_tif/' + b_name + '.tiff', WORKSPACE + 'archives/' + b_name + '.tiff'
+				infoDialog(msg="DCP terminé !")
+			else:
+				warningDialog(msg="Echec, DCP non créé correctement.")
+
+	###################################################
+	
+	########## TIFF/J2K SEQUENCES TAB
+	
+	###################################################
+	
+	def createSequenceWidgets(self):
+		"""Initiate sequence tab in main window"""
+		self.seqTable = gtk.Table(rows = 1, columns = 3, homogeneous = False)
+		self.seqTable.set_row_spacings(5)
+		self.seqTable.set_col_spacings(5)
+		
+		##################################
+		####### Pseudo-screen on left hand
+		self.screenTable = gtk.Table(rows = 5, columns = 1, homogeneous = False)
+
+		## nom du DCP final
+		if self.b_name != '':
+			title_name = self.mkDcpName(self.b_name)
+		else:	
+			title_name = "Sélectionner une séquence ->"
+		self.seq_dcp_name = createLabel(self.screenTable, 
+			text=title_name, 
+			gridX=0, gridY=0, xExpand=False, yExpand=False, xPadding=10, yPadding=20)
+			
+		## Fenetre de pseudoterm et de sequence
+		
+		# cadre aux dimensions du format divisé par 4
+		self.seqViewerFrame = gtk.Frame()
+		self.seqViewerFrame.set_shadow_type(gtk.SHADOW_OUT)
+		self.screenTable.attach(self.seqViewerFrame, 0,1,1,2, 
+			xoptions=gtk.FILL, yoptions=gtk.SHRINK, xpadding=10, ypadding=10)
+			
+		## Timeline
+		
+		# adj : value, lower, upper, step_incr, page_incr, page_size
+		def_adj = gtk.Adjustment(0, 0, 1, 1, 1, 0)
+		self.echelle = gtk.HScale(def_adj)
+		self.echelle.set_digits(0)
+		self.echelle.set_update_policy(gtk.UPDATE_DISCONTINUOUS)
+		self.echelle.set_value_pos(gtk.POS_TOP)
+		# attacher l'echelle
+		self.screenTable.attach(self.echelle, 0,1,3,4, 
+			xoptions=gtk.FILL, yoptions=gtk.SHRINK, xpadding=10, ypadding=10)
+		self.echelle.connect("value-changed", self.showCurrentPic)
+		self.echelle.set_sensitive(False)
+		self.echelle.hide()
+
+		## Time infos
+		
+		## Execution button
+		self.execButton = gtk.Button("Créer ce DCP")
+		self.screenTable.attach(self.execButton, 0,1,4,5, 
+			xoptions=gtk.FILL, yoptions=gtk.SHRINK, xpadding=10, ypadding=10)
+		self.execButton.connect("released", self.startDCPcreation)
+		self.execButton.set_sensitive(False)
+		
+		## Trash button
+		self.trashButton = gtk.Button("Supprimer ce DCP", gtk.STOCK_DELETE, False)
+		self.screenTable.attach(self.trashButton, 0,1,5,6,
+			xoptions=gtk.SHRINK, yoptions=gtk.SHRINK, xpadding=10, ypadding=10)
+		self.trashButton.connect("released", self.deleteTheJob)
+		self.trashButton.hide()
+		
+		##############################
+		##### Jobs queue on right hand
+
+		self.queueTable = gtk.Table(rows = 3, columns = 1, homogeneous = False) 
+		#~ self.queueTable = gtk.VBox()
+		
+		## queue label
+		self.queueLabel = createLabel(self.queueTable, 
+			text="Travaux en attente", 
+			gridX=0, gridY=0, xExpand=True, yExpand=False, xPadding=10, yPadding=20)
+		self.queueLabel = gtk.Label(u"Travaux en attente")
+		self.queueLabel.set_alignment(0.5, 0.8)
+		#~ self.queueTable.pack_start(self.queueLabel, fill=True)
+
+		## jobs tree view
+		self.refreshPendingJobs()
+		
+		## job progressbar (-> j2k, -> mxf, -> dcp)
+		# (sous le tree view)
+		
+		## Treat the whole queue button
+		self.treatQueueBtn = gtk.Button(u"Convertir toutes les séquences en DCP")
+		self.queueTable.attach(self.treatQueueBtn, 0,1,2,3,
+			xoptions=gtk.FILL, yoptions=gtk.SHRINK, xpadding=10, ypadding=10)
+		self.treatQueueBtn.connect("released", self.startQueueTreatment)
+
+		## 
+		self.seqTable.attach(self.screenTable, 0,1,0,1, xoptions=gtk.FILL, yoptions=gtk.FILL)
+
+		self.seqTable.attach(self.queueTable, 2,3,0,1, xoptions=gtk.FILL, yoptions=gtk.FILL)
+		
+		self.seqTable.show_all()
+		
+	def sequenceViewer(self, name='', length=0, seq_type='', pic=10):
+		"""Tiff sequences poorman's viewer"""
+		
+		# update status bar
+		CUR_STATE = "Séquence de " + str(length) + " images achevée"
+		self.updateStatusBar(CUR_STATE, False)
+		
+		if name == '':
+			name = self.b_name
+		if seq_type == '':
+			seq_type = self.seq_type
+		
+		# on conserve les valeurs pour le signal value-changed de l'échelle
+		self.seq_name = name
+		self.seq_type = seq_type
+		self.seq_path = WORKSPACE + '.tmp_' + seq_type[:3] + '/' + name
+		
+		## nom du DCP 
+		self.seq_dcp_name.set_text(self.mkDcpName(name))
+		
+		## On rouvre la fenetre si elle a servi de terminal
+		try:
+			if self.seqViewerSW:
+				pass
+		except:
+			self.cleanWindow(self.seqViewerFrame)
+			self.seqViewerSW = gtk.ScrolledWindow()
+			self.seqViewerFrame.add(self.seqViewerSW)
+			self.seqViewerSW.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+			self.seqViewerSW.set_size_request((mx_width/4)+10, (mx_height/4)+10)
+			
+		# Scale adjustment
+		# adj : value, lower, upper, step_incr, page_incr, page_size
+		tl_adj = gtk.Adjustment(pic, 1, length, 1, 1, 0)
+		self.echelle.set_adjustment(tl_adj)
+		self.echelle.set_sensitive(True)
+		
+		# on affiche le enieme tiff dans la fenetre
+		self.showCurrentPic(widget=self.echelle, seq_type=seq_type, name=name, pic=pic, length=length)
+		
+		# affichage du visionneur de séquence
+		self.screenTable.show_all()
+
+		# on active l'échelle
+		self.echelle.set_sensitive(True)
+		# on active le bouton de création de DCP
+		self.execButton.set_sensitive(True)
+		# on active le bouton de suppression de DCP
+		self.trashButton.show()
+		
+		# et on met à jour le treeview de job
+		self.refreshPendingJobs()
+		
+	########## About sequences
+		
+	def showCurrentPic(self, widget=None, seq_type='', name='', pic=0, length=1):
+		"""Show the picture corresponding to the preview timeline"""
+		if pic == 0:
+			val = str(int(widget.get_value()))
+		else:
+			val = str(pic)
+			
+		if seq_type == '':
+			seq_type = self.seq_type
+			
+		if name == '':
+			name = self.seq_name
+		
+		# definir l'image
+		ext = '.tiff'
+		img = WORKSPACE + '.tmp_' + seq_type[:3] + '/' + name + '/' + name + '_' + val + ext
+		if not os.path.exists(img):
+			img = glob.glob(WORKSPACE + '.tmp_' + seq_type[:3] + '/' + name + '/*')[int(val)+1]
+			
+		pixb = gtk.gdk.pixbuf_new_from_file(img)
+		scaled_pix = pixb.scale_simple(int(mx_width/4), int(mx_height/4), gtk.gdk.INTERP_BILINEAR)
+		#pixb.scale(dest, dest_x, dest_y, dest_width, dest_height, offset_x, offset_y, scale_x, scale_y, interp_type)
+		image = gtk.Image()
+		image.set_from_pixbuf(scaled_pix)
+
+		# nettoyage de la fenetre
+		self.cleanWindow(self.seqViewerSW)
+		
+		# remplissage de la fenetre
+		self.seqViewerSW.add_with_viewport(image)
+		self.seqViewerSW.show_all()
+		
+		# 
+		ips = int(Prefs['framerate'])
+		totalsecondes = float(pic / ips)
+		centiemes = (pic % ips) * (100 / ips)
+		if totalsecondes > 60:
+			secondes = int(totalsecondes % 60)
+			minutes = int(totalsecondes / 60)
+		else:
+			secondes = int(totalsecondes)
+			minutes = 0
+		
+		CUR_STATE = "Image n°" + str(val) + " à " + str(minutes) + "\' " + str(secondes) + "\'\' ." + str(centiemes * 100)
+		self.updateStatusBar(msg=CUR_STATE)
+
+	def cleanViewer(self):
+		"""Clean the sequence viewer between two"""
+		#
+		self.cleanWindow(self.seqViewerSW)
+		self.seq_dcp_name.set_text("")
+		self.trashButton.hide()
+		self.execButton.set_sensitive(False)
+		self.echelle.set_sensitive(False)
+		self.echelle.hide()
+
+	def createJobsTreeView(self):
+		"""Create the treeview for pending jobs"""
+		self.jobsTreeView = gtk.TreeView()
+		# already defined in filesTreeView :
+			# self.cell 	(text)
+			# self.cellico 	(icons)
+		#~ self.cellBtn_Do = CellRendererClickablePixbuf()
+		#self.cellBtn_Do.do_activate(self, event, widget, path, background_area, cell_area, flags)
+		#~ self.cellBtn_Do.do_activate(self, 
+									#~ gtk.gdk.BUTTON_RELEASE, 
+									#~ self.jobsTreeView, 
+									#~ path, 
+									#~ self.jobsTreeView.get_background_area(path, ), 
+									#~ self.get_size(self.jobsTreeView), 
+									#~ gtk.CELL_RENDERER_SELECTED)
+		#self.cellBtn_Do.connect("released", self.selectTheJob)
+		
+		#~ self.cell_del = CellRendererClickablePixbuf()
+		#~ self.cell_del.set_property('cell-background', 'red')
+		#self.cell_del.connect("released", self.deleteTheJob)
+		
+		#self.cell_do = gtk.CellRendererPixbuf()
+		self.cell_do = CellRendererClickablePixbuf()
+		#self.cell_del = gtk.CellRendererPixbuf()
+		#self.cell_del = CellRendererClickablePixbuf()
+		#self.cell_del.set_property('cell-background', 'red')
+		
+		# column 0 : Watch
+		self.jobsCol0 = gtk.TreeViewColumn("Voir")
+		self.jobsTreeView.append_column(self.jobsCol0)
+		self.jobsCol0.pack_start(self.cell_do, True)
+		self.jobsCol0.add_attribute(self.cell_do, 'pixbuf', 0)
+		self.jobsCol0.set_resizable(False)	
+		# column 1 : Thumbnail
+		self.jobsCol1 = gtk.TreeViewColumn("DCP")
+		self.jobsTreeView.append_column(self.jobsCol1)
+		self.jobsCol1.pack_start(self.cellico, True)
+		self.jobsCol1.add_attribute(self.cellico, 'pixbuf', 1)
+		self.jobsCol1.set_resizable(False)		
+		# column 2 : Title
+		self.jobsCol2 = gtk.TreeViewColumn("Titre")
+		self.jobsTreeView.append_column(self.jobsCol2)
+		self.jobsCol2.pack_start(self.cell, True)
+		self.jobsCol2.add_attribute(self.cell, 'text', 2)
+		self.jobsCol2.set_sort_column_id(2)
+		self.jobsCol2.set_resizable(False)		
+		# column 3 : Laps
+		self.jobsCol3 = gtk.TreeViewColumn("Durée")
+		self.jobsTreeView.append_column(self.jobsCol3)
+		self.jobsCol3.pack_start(self.cell, True)
+		self.jobsCol3.add_attribute(self.cell, 'text', 3)
+		self.jobsCol3.set_sort_column_id(3)
+		self.jobsCol3.set_resizable(False)		
+		# column 4 : Date
+		self.jobsCol4 = gtk.TreeViewColumn("Date")
+		self.jobsTreeView.append_column(self.jobsCol4)
+		self.jobsCol4.pack_start(self.cell, True)
+		self.jobsCol4.add_attribute(self.cell, 'text', 4)
+		self.jobsCol4.set_sort_column_id(4)
+		self.jobsCol4.set_resizable(False)		
+		# treeview options
+		self.jobsTreeView.set_search_column(1)
+		self.jobsTreeView.set_reorderable(True)
+		self.jobsTreeView.set_grid_lines(True)
+		self.jobsTreeView.set_rules_hint(True)
+		
+		self.jobsTreeView.connect("row-activated", self.selectTheJob)	
+
+	def scanJobs(self, jobs_type, store):
+		"""Determine if we have unfinished jobs and listStore them"""
+		
+		# En fonction du type de job requis
+		if jobs_type == 'tiff':
+			jobs_list = glob.glob(WORKSPACE + '.tmp_tif/*')
+			job_ext = 'tiff'
+		
+		if jobs_type == 'j2k':
+			jobs_list = glob.glob(WORKSPACE + '.tmp_j2k/*')
+			job_ext = 'j2c'
+		## !! Pour compiler du jpeg2000 dans un gdk.pixbuf
+		## il faut installer la librairie JasPer 1.900 (ou >?) sur le système.
+			
+
+		#~ # Bouton do/voir/convertir
+		img_do = gtk.Image()
+		pxbf_do = img_do.render_icon(gtk.STOCK_CONVERT, gtk.ICON_SIZE_MENU)
+		#~ # Bouton supprimer
+		img_del = gtk.Image()
+		pxbf_del = img_del.render_icon(gtk.STOCK_DELETE, gtk.ICON_SIZE_MENU)
+		#~ icon_set = gtk.IconSet()
+		#~ btn_del = icon_set.render_icon(
+					#~ style=None, 
+					#~ direction=gtk.TXT_DIR_LTR, state,
+					#~ state=gtk.STATE_NORMAL,
+					#~ size=gtk.ICON_SIZE_BUTTON, 
+					#~ widget=None, 
+					#~ detail=None)
+		
+		# Boucle des dossiers 
+		
+		for j in jobs_list:
+			if os.path.isdir(j):
+				
+				# titre
+				titre = os.path.basename(j)
+				
+				# duree
+				nb_items = len(glob.glob(j + '/*'))
+				laps = nb_items / int(Prefs['framerate'])
+				s = str(laps % 60)
+				m = str(laps / 60)
+				duree = m + "’" + s + "”"
+
+				# thumbs and icons
+				if jobs_type == 'mxf':
+					thumb = gtk.gdk.pixbuf_new_from_file_at_size(CONFIG_DIR + 'icons/mxf.png', 20, 20)
+				if jobs_type == 'j2k':
+					thumb = gtk.gdk.pixbuf_new_from_file_at_size(CONFIG_DIR + 'icons/jpeg2000.png', 20, 20)
+				if jobs_type == 'tiff':	
+					pick_img = int(nb_items / 5)
+					if pick_img == 0:
+						continue
+					thumb_path = j + '/' + titre + '_' + str(pick_img) + '.' + job_ext
+					if os.path.exists(thumb_path):
+						thumb = gtk.gdk.pixbuf_new_from_file_at_size(thumb_path, 40, 40)
+					else:
+						thumb = gtk.gdk.pixbuf_new_from_file_at_size(CONFIG_DIR + 'icons/camera-pixshark.png', 20, 20)
+				
+				## Mod time
+				mod_time = os.path.getmtime(j)
+				mod_time = datetime.datetime.fromtimestamp(mod_time)
+				mod_time = mod_time.strftime('%d-%m-%y %H:%M:%S')
+				
+				# append
+				that_row = [pxbf_do, thumb, titre, duree, mod_time]
+				store.append(that_row)
+
+	def refreshPendingJobs(self, button=None, keep_checked=False):
+		""" Removes and replaces the listStore in the jobs treeView"""
+		# On réinitialise le jobsStore
+		# Model : icon, titre, type, [do], [del]
+		self.jobsStore = gtk.ListStore(
+						gtk.gdk.Pixbuf, 
+						gtk.gdk.Pixbuf, 
+						gobject.TYPE_STRING, 
+						gobject.TYPE_STRING, 
+						gobject.TYPE_STRING
+					)
+		# Et on le remplit de jobs en j2k, tiff, etc.
+		self.scanJobs('tiff', self.jobsStore)
+		#~ self.scanJobs('j2k', self.jobsStore)
+		
+		# si la liste obtenue est vide
+		if len(self.jobsStore) == 0:
+			self.seqTable.hide()
+			#~ self.noJobs = gtk.TextView()
+			#~ self.noJobs.set_editable(False)
+			#~ self.noJobs.set_cursor_visible(False)
+			#~ empty_buffer = self.noJobs.get_buffer()
+			#~ empty_buffer.insert_at_cursor("Aucun")
+			#~ self.queueTable.attach(self.noJobs, 0,1,1,2, 	
+				#~ xoptions=gtk.FILL, yoptions=gtk.FILL, xpadding=5, ypadding=5)
+
+		# sinon on crée le treeview
+		else:
+			self.seqTable.show()
+			try:
+				self.jobsTreeView.set_model(self.jobsStore)
+			except:
+				# si la liste était vide auparavant
+				#~ try:
+					#~ self.queueTable.remove(self.noJobs)
+					
+				# on crée le TreeView s'il n'existe pas déjà
+				self.createJobsTreeView()
+				self.queueTable.attach(self.jobsTreeView, 0,1,1,2, 
+					xoptions=gtk.FILL, yoptions=gtk.FILL, xpadding=10, ypadding=10)	
+				self.jobsTreeView.set_model(self.jobsStore)
+				#~ self.queueTable.pack_start(self.jobsTreeView, fill=True)
+				self.seqTable.show_all()
+
+	def selectTheJob(self, tree, path=None, col=None):
+		"""Show the sequence dblclicked from the treeview into the viewer"""
+		# Récupérer le nom du dossier des tiffs/j2k à partir du path (index de rangée)
+		the_row = path[0]
+		store = tree.get_model()
+		it = store.get_iter(the_row)
+		dir_name = store[it][2]
+		
+		# prévoir une colonne précisant tiff ou j2k
+		type_icon = store[it][2]
+
+		type_name = 'tiff'
+		self.seq_type = type_name
+		
+		dir_path = WORKSPACE + '.tmp_' + type_name[:3] + '/' + dir_name
+		# longueur de la séquence
+		ls = os.listdir(dir_path)
+		nb_img = len(ls)
+		# Affichage dans le visionneur
+		self.sequenceViewer(name=dir_name, length=nb_img, seq_type=self.seq_type, pic=nb_img/10)
+		
+	def deleteTheJob(self, button=None):
+		"""Delete a sequence of tiff images"""
+		# Variables disponibles : self.seq_name, self.seq_path, self.seq_type 
+		msg_suppr = "Confirmer la suppression de la séquence " + self.seq_type + " " + self.seq_name + " ?"
+		if confirmDialog(msg=msg_suppr):
+				
+				shutil.rmtree(self.seq_path)
+				self.refreshPendingJobs()
+				CUR_STATE = "Séquence " + self.seq_name + " supprimée"
+				self.updateStatusBar(CUR_STATE, False)
+				
+				# on nettoie le viewer
+				self.cleanViewer()
+					
+			#~ try:
+			#~ except:
+				#~ errorDialog(msg="Echec de la suppression de " + self.seq_name + " !")
+		else:
+			CUR_STATE = "Abandon de la suppression"
+			self.updateStatusBar(CUR_STATE, False)
+	
+	###################################################
+		
+	########## Audio tab
+	
+	###################################################
+	
+	def createAudioWidgets(self):
+		"""Initiate Audio tab in main window"""
+		self.audioTable = gtk.Table(rows = 1, columns = 1, homogeneous = False)
+		###### Champs spécifiques au son
+		#( à placer dans un onglet spécifique)
+		# volume
+		# pseudo-player
+		# différentes pistes (courbes ?)
+		
+		# Si on est en mode video (action = video)
+		# proposer d'extraire le son de la video (si elle en a)
+		# ou utiliser un autre fichier.
+		# Dans ce cas comment calibrer (allonger/raccourcir) le fichier son,
+		# le placer au début, à la fin, à un timecode dans la video.
+		# Et voir comment faire si on doit gérer plusieurs fichiers sons (montage)
+		
+		self.audioTable.set_row_spacings(5)
+		self.audioTable.set_col_spacings(5)
+			
+	###################################################
+		
+	########## DCP PROCESSING TAB
+	
+	###################################################
+	
+	def createDCPWidgets(self):
+		"""Initiate DCP tab in main window"""
+
+		# Table
+		self.dcpTable = gtk.Table(rows=1, columns=2, homogeneous=False)
+		self.dcpTable.set_row_spacings(5)
+		self.dcpTable.set_col_spacings(5)
+				
+		# Vboxes : stdout-term | dcp-management
+		self.stdoutSide = gtk.VBox(homogeneous=False)
+		self.dcpTable.attach(self.stdoutSide, 0,1,0,1, xpadding=10, ypadding=10)
+
+		self.otherSide = gtk.VBox(homogeneous=False)
+		self.dcpTable.attach(self.otherSide, 1,2,0,1)		
+			
+		## DCP title
+		self.dcp_title = gtk.Label("...")
+		self.dcp_title.set_alignment(0.5, 0.8)	
+		self.dcp_title.set_padding(5,20)
+		self.stdoutSide.pack_start(self.dcp_title, fill=False, expand=False)
+			
+		## Monitoring box
+		self.iconBox = gtk.HBox(homogeneous=True)
+		self.iconTable = gtk.Table(rows=1, columns=1, homogeneous=True)
+		self.iconTable.attach(self.iconBox, 0,1,0,1, 
+			xoptions=gtk.EXPAND, yoptions=gtk.SHRINK, xpadding=10, ypadding=5)
+		self.stdoutSide.pack_start(self.iconTable, expand=False, fill=False)
+			
+		## Cadre pour la sortie standard
+		self.stdoutFrame = gtk.Frame()
+		self.stdoutFrame.set_shadow_type(gtk.SHADOW_OUT)
+		self.stdoutSide.pack_start(self.stdoutFrame, expand=False, fill=True)
+		
+		## DCP management
+		
+		# option d'archive (zip, tar),
+		labelZip = gtk.Label("Archiver le nouveau DCP")
+		self.otherSide.pack_start(labelZip, expand=False, fill=False)
+		# option de copie (clef USB), 
+		labelXportUsb = gtk.Label("Le copier sur un support USB externe")
+		self.otherSide.pack_start(labelXportUsb, expand=False, fill=False)
+		# de visualisation ?
+		labelVisu = gtk.Label("Visualisation")
+		self.otherSide.pack_start(labelVisu, expand=False, fill=False)
+	
+	def createDcpTreeView(self):
+		"""Create the treeview for pending jobs"""
+		## Menu contextuel :
+		# - Proprietés (image, poids, titre, détails des fichiers,...)
+		# - zipper/tarer
+		# - couper, copier, envoyer vers (périphs usb, uploader)
+		# - supprimer (ou corbeille?)
+		
+		self.dcpTreeView = gtk.TreeView()
+		# cell definitions :
+
+		# column 0 : Watch / check
+		self.dcpCol0 = gtk.TreeViewColumn("Voir")
+		self.dcpTreeView.append_column(self.dcpCol0)
+		self.dcpCol0.pack_start(self.cell_do, True)
+		self.dcpCol0.add_attribute(self.cell_do, 'pixbuf', 0)
+		self.dcpCol0.set_resizable(False)	
+		# column 1 : Thumbnail / icon
+		self.dcpCol1 = gtk.TreeViewColumn("DCP")
+		self.dcpTreeView.append_column(self.dcpCol1)
+		self.dcpCol1.pack_start(self.cellico, True)
+		self.dcpCol1.add_attribute(self.cellico, 'pixbuf', 1)
+		self.dcpCol1.set_resizable(False)		
+		# column 2 : Title
+		self.dcpCol2 = gtk.TreeViewColumn("Titre")
+		self.dcpTreeView.append_column(self.dcpCol2)
+		self.dcpCol2.pack_start(self.cell, True)
+		self.dcpCol2.add_attribute(self.cell, 'text', 2)
+		self.dcpCol2.set_sort_column_id(2)
+		self.dcpCol2.set_resizable(False)		
+		# column 3 : Laps
+		self.dcpCol3 = gtk.TreeViewColumn("Durée")
+		self.dcpTreeView.append_column(self.dcpCol3)
+		self.dcpCol3.pack_start(self.cell, True)
+		self.dcpCol3.add_attribute(self.cell, 'text', 3)
+		self.dcpCol3.set_sort_column_id(3)
+		self.dcpCol3.set_resizable(False)		
+		# column 4 : Size (Go)
+		self.dcpCol4 = gtk.TreeViewColumn("Date")
+		self.dcpTreeView.append_column(self.dcpCol4)
+		self.dcpCol4.pack_start(self.cell, True)
+		self.dcpCol4.add_attribute(self.cell, 'text', 4)
+		self.dcpCol4.set_sort_column_id(4)
+		self.dcpCol4.set_resizable(False)		
+		# treeview options
+		self.dcpTreeView.set_search_column(1)
+		self.dcpTreeView.set_reorderable(True)
+		self.dcpTreeView.set_grid_lines(True)
+		self.dcpTreeView.set_rules_hint(True)
+		
+		self.dcpTreeView.connect("row-activated", self.selectTheJob)	
+
+	######## DCP proper
+	
+	def startDCPcreation(self, button=None):
+		"""Initiate DCP creation process"""
+		## Onglet execution
+		self.dcpTable.show_all()
+		self.notebook.set_current_page(5)
+		
+		# variables normalement disponibles : 
+		# self.seq_name, self.seq_path, self.seq_type 
+				
+		## Titre
+		self.dcp_title.set_text(self.mkDcpName(self.seq_name))
+		
+		# si la configuration du shell script n'a pas été écrite au moment 
+		# de générer la séquence de tiffs, il faut le faire maintenant.
+		if not os.path.exists(WORKSPACE + '.tmp_txt/' + self.seq_name + '-conf.sh'):
+			self.writeShellConfig(self.seq_name, file_path=self.seq_path)
+		
+		# récupérer d'éventuelles pistes son
+		# s'agit-il de 3D ?
+		
+		## Begin monitoring box
+		
+		## Vignettes de controle
+		# tiff
+		#~ if os.path.exists(WORKSPACE + '.tmp_tif/' + self.seq_name + '.tiff'):
+			#~ thumb = gtk.gdk.pixbuf_new_from_file_at_size(WORKSPACE + '.tmp_tif/' + self.seq_name + '.tiff', 48,32)
+			#~ tiffBullet = gtk.Image()
+			#~ tiffBullet.set_from_pixbuf(thumb)
+			#~ self.iconBox.pack_start(tiffBullet)
+			#~ # fleche
+			#~ fleche = gtk.Label('→')
+			#~ self.iconBox.pack_start(fleche)
+
+
+		## Fenetre de terminal
+		self.dcpTerminal = ShellProc()
+		self.cleanWindow(self.stdoutFrame)
+		self.stdoutFrame.add(self.dcpTerminal)
+		
+		## Appels au shell-script:
+		
+		# TIFF -> JPEG2000
+		
+		if self.seq_type == 'tiff':
+			# tiff
+			thumb = gtk.gdk.pixbuf_new_from_file_at_size(CONFIG_DIR + 'icons/camera-pixshark.png', 24,24)
+			tiffBullet = gtk.Image()
+			tiffBullet.set_from_pixbuf(thumb)
+			self.iconBox.pack_start(tiffBullet)
+			# fleche
+			fleche = gtk.Label('→')
+			self.iconBox.pack_start(fleche)
+			# j2k
+			thumb = gtk.gdk.pixbuf_new_from_file_at_size(CONFIG_DIR + 'icons/jpeg2000.png', 24,24)
+			j2kBullet = gtk.Image()
+			j2kBullet.set_from_pixbuf(thumb)
+			self.iconBox.pack_start(j2kBullet)
+			self.iconBox.show_all()
+			## Script
+			self.dcpTerminal.process(bname=self.seq_name, cmd='conv_tif2j2k', action='tif2j2k')
+		
+		# WAV -> MXF
+		
+		if self.seq_type == 'wav':
+			# fleche
+			fleche = gtk.Label('→')
+			self.iconBox.pack_start(fleche)
+			# audio-mxf
+			thumb = gtk.gdk.pixbuf_new_from_file_at_size(CONFIG_DIR + 'icons/sound-on-pixshark.png', 24,24)
+			wavBullet = gtk.Image()
+			wavBullet.set_from_pixbuf(thumb)
+			self.iconBox.pack_start(wavBullet)
+			self.iconBox.show_all()
+			## Script
+			self.dcpTerminal.process(bname=self.seq_name, cmd='conv_j2k2mxf', action='j2k2mxf')
+				
+		# JPEG2000 -> MXF
+			
+		if self.seq_type == 'j2k':
+			# fleche
+			fleche = gtk.Label('→')
+			self.iconBox.pack_start(fleche)
+			# mxf
+			thumb = gtk.gdk.pixbuf_new_from_file_at_size(CONFIG_DIR + 'icons/mxf-file.png', 24,24)
+			mxfBullet = gtk.Image()
+			mxfBullet.set_from_pixbuf(thumb)
+			self.iconBox.pack_start(mxfBullet)
+			self.iconBox.show_all()
+			## Script
+			self.dcpTerminal.process(bname=self.seq_name, cmd='conv_wav2mxf', action='j2k2mxf')
+			
+		# MXF -> DCP
+		
+		if self.seq_type == 'mxf':
+			# fleche
+			fleche = gtk.Label('→')
+			self.iconBox.pack_start(fleche)
+			# dcp
+			thumb = gtk.gdk.pixbuf_new_from_file_at_size(CONFIG_DIR + 'icons/dcp.png', 24,24)
+			dcpBullet = gtk.Image()
+			dcpBullet.set_from_pixbuf(thumb)
+			self.iconBox.pack_start(dcpBullet)
+			self.iconBox.show_all()
+			## Script
+			self.dcpTerminal.process(bname=self.seq_name, cmd='mk_DCP', action='mxf2dcp')
+
+		# Finalisation et conclusion
+		if self.seq_type == 'DCP':
+
+			infoDialog(msg="Job terminé")
+			
+			## Afficher le treeview des DCP
+			
+
+			## Destruction ou archivage du tiff unique de carton
+			if os.path.exists(WORKSPACE + '.tmp_tif/' + self.b_name + '.tiff'):
+				## Suppression
+				if Prefs['autoclean'] in ['wash', 'vacuum']:
+					#confirmation de suppression
+					msg_suppr = "Supprimer le fichier ?"
+					if confirmDialog(msg=msg_suppr):
+						try:
+							os.remove(WORKSPACE + '.tmp_tif/' + self.b_name + '.tiff')
+							CUR_STATE = "Le fichier " + self.b_name + ".tiff a été supprimé."
+						except:
+							CUR_STATE = "Echec de la suppression de " + WORKSPACE + '.tmp_tif/' + self.b_name + '.tiff' + " !"
+							errorDialog(msg=CUR_STATE)
+
+						self.updateStatusBar(CUR_STATE, False)
+
+				## Archivage du fichier de carton
+				else:
+					if not os.path.isdir(WORKSPACE + 'archives/'):
+						os.makedir(WORKSPACE + 'archives/')
+						
+					shutil.move(WORKSPACE + '.tmp_tif/' + b_name + '.tiff', WORKSPACE + 'archives/' + b_name + '.tiff')
+				
+		
+			
+	def startQueueTreatment(self, button=None):
+		"""Treat all the jobs in the sequence queue"""
+		# Récupérer la liste des jobs 
+		# self.jobsStore
+		
+		infoDialog(msg="Ready to start the queue")
+		
+		
+	###################################################
+	
+	#############
+			
+	######## Viewing stuff
+	
+	def preview(self, action=None):
+		"""Just open the preview tab"""
+		pass
+
+	def DcpViewer(self, action=None):
+		"""Try to read a preview of the selected/last DCP"""
+		pass
+
+	######## System jobs
+
+	def writeShellConfig(self, b_name, file_name='', file_path='', n=0, action=None):
+		"""Write a per-job configuration file for shell processes"""
+		# nom de base du DCP en gestation
+		shellStr = "#!/bin/sh\n"
+		shellStr += "b_name=\"" + b_name + "\"\n"
+		shellStr += "file_name=\"" + file_name + "\"\n"
+		shellStr += "file_path=\"" + file_path + "\"\n"
+		if action is not None:
+			shellStr += "action=\"" + self.action + "\"\n"
+		if n != 0:
+			shellStr += "n=" + str(n) + "\n"
+		shellStr += "\n"
+		# parsing du fichier de configuration
+		for key in sorted(Prefs):
+			if key:
+				shellStr += "%s=%s\n" % (key, str(Prefs[key]))
+		shellStr += "\n# EOF\n"
+		
+		# The config file for the shell script must be the same as sourced in SHELL_SCRIPT
+		SHELL_CONFIG = WORKSPACE + '.tmp_txt/' + b_name + '-conf.sh'
+		
+		# ecriture dans le fichier
+		f = open(SHELL_CONFIG, "w")
+		f.write(shellStr)
+		f.close()
+		
+		# make sure we have execution permission on the new config file
+		os.chmod(SHELL_CONFIG, 0755)
+		
+	def shellExecInBuffer(self, prog=SHELL_SCRIPT, command='', encoding='utf-8', buffy=None, shell=False, log_file=''):
+		"""Execute a shell script and get the output (and stderr) 
+		in a text buffer and if possible in a log at the same time."""
+		
+		# log directory
+		if not os.path.isdir(WORKSPACE + '.shell_logs/'):
+			os.makedirs(WORKSPACE + '.shell_logs/')
+
+		# - solution non unicode et bloquant le script :
+		# en plus en l'état elle n'a pas l'air de renvoyer stderr
+		# mais pour l'instant c'est ce qui a le mieux marché
+
+		do_script = subprocess.Popen(
+				[prog, command], 
+				bufsize=1,
+				shell=True,
+				stdout=subprocess.PIPE, 
+				stderr=subprocess.STDOUT
+				)
+		with open(log_file, 'a') as f:
+			while True:
+				out = do_script.stdout.read(1)
+				if out == '' and do_script.poll() != None:
+					# Affichage du buffer			
+					self.myLiftedW.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+					self.cleanWindow(self.myLiftedW)
+					self.myLiftedW.add(self.myTerm)
+					self.myLiftedW.show_all()
+					break 
+				if out != '':
+					buffy.insert_at_cursor(out)
+					f.write(out)
+					
+		
+	def write_to_buffer(self, fd, condition):
+		if condition == gobject.IO_IN:
+			char = fd.read(1)
+			self.myTermBuffer.insert_at_cursor(char)
+			return True
+		else:
+			return False
+			
+
+	def writeBufferInLog(self, name='', buffy=None):
+		"""Write down a buffer contents in a properly named file"""
+		
+		# log directory
+		if not os.path.isdir(WORKSPACE + '.shell_logs/'):
+			os.makedirs(WORKSPACE + '.shell_logs/')
+			
+		with open(WORKSPACE + '.shell_logs/' + name + '.log', 'a') as f:
+			t = buffy.get_text(buffy.get_start_iter(), buffy.get_end_iter(), True)
+			f.write(str(t))
+
+	def cleanString(self, string, do_shell=False):
+		if do_shell:
+			#subprocess.Popen(SHELL_SCRIPT + ' strip_spaces ' + string, bufsize=-1, shell=False)
+			#''.join((c for c in unicodedata.normalize('NFD', string) if unicodedata.category(c) != 'Mn'))
+			unicodedata.normalize('NFKD', unicode(string)).encode('ASCII', 'ignore') 
+		else:
+			string.replace(" ","_"); string.replace("[","-"); string.replace("]","-")
+			string.replace("'","-"); string.replace(":","-"); string.replace(";","-")
+			string.replace(",","-"); string.replace("?","-"); string.replace("!","-")
+			string.replace("=","-"); string.replace("(","-"); string.replace(")","-")
+			string.replace("@","-"); string.replace("%","-"); string.replace("°","-")
+			string.replace("|","-"); 
+			string.replace("é","e"); string.replace("è","e"); string.replace("ë","e")
+			string.replace("ê","e"); string.replace("à","a")
+			string.replace("ù","u"); string.replace("ü","u"); string.replace("û","u")
+			string.replace(",",""); string.replace("'",""); string.replace("ç","c")
+
+		return string
+
+	def manageFonts():
+		"""Retrieve and browse system fonts for imagemagick"""
+		## Lister les fontes déjà disponibles
+		## Essayer de récupérer d'autres fontes présentes sur le système
+		pass
+
+	def exportMyDcp():
+		"""Copy selected DCP to USB drive"""
+		pass
+
+	def generateDcp():
+		"""Proceed to DCP building operations"""
+		if confirmDialog(self, "Générer un DCP peut être un processus parfois très long. Commencer la création du DCP ?") == gtk.RESPONSE_YES:
+			pass
+		
+	def zipMyDcp(mydcp):
+		"""Generate a zip compressed file from selected DCP"""
+		#shutils._make_zipfile(mydcp)
+		pass
+		
+	######## Main things
+
+	def switchPage(self, notebook, page, page_num):
+		"""Handles notebook page switch events."""
+
+		# If user selects the 'View Config' tab, update the textarea within this tab.
+		if notebook.get_tab_label_text(notebook.get_nth_page(page_num)) == "Fichier":
+			self.generateConfig()
+
+
+class CellRendererClickablePixbuf(gtk.CellRendererPixbuf):
+	"""A class to make TreeView cells pixbuf and clickable together"""
+
+	__gsignals__ = {'clicked': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, 
+								(gobject.TYPE_STRING,))
+					}
+					
+	def __init__(self):
+		gtk.CellRendererPixbuf.__init__(self)
+		self.set_property('mode', gtk.CELL_RENDERER_MODE_ACTIVATABLE)
+		
+	def do_activate(self, event, widget, path, background_area, cell_area, flags):
+		self.emit('clicked', path)	
+	
+def createLabel(parent, text="", gridX=0, gridY=0, sizeX=1, sizeY=1, xPadding=0, yPadding=0, xExpand=False, yExpand=False):
+	"""Creates a label and adds it to a parent widget."""
+	temp = gtk.Label(text)
+	temp.set_alignment(0.8, 0.5)
+	parent.attach(temp, gridX, gridX+sizeX, gridY, gridY+sizeY, xpadding=xPadding, ypadding=yPadding, xoptions=gtk.EXPAND if xExpand else 0, yoptions=gtk.EXPAND if yExpand else 0)
+	
+	return temp
+
+def createComboBox(parent, choices=["null"], active=0, gridX=0, gridY=0, sizeX=1, sizeY=1, xExpand=False, yExpand=False, handler=None):
+	"""Creates a combo box with text choices and adds it to a parent widget."""
+	temp = gtk.combo_box_new_text()
+	
+	for choice in choices:
+		temp.append_text(choice)
+	
+	temp.set_active(active)
+	
+	if handler != None:
+		temp.connect("changed", self.changeOccured)
+	
+	parent.attach(temp, gridX, gridX+sizeX, gridY, gridY+sizeY, xoptions=gtk.EXPAND if xExpand else 0, yoptions=gtk.EXPAND if yExpand else 0)
+	
+	return temp
+
+def createEntry(parent, maxSize, width, text="", gridX=0, gridY=0, sizeX=1, sizeY=1, xExpand=False, yExpand=False, handler=None, name=""):
+	"""Creates a text entry widget and adds it to a parent widget."""
+	temp = gtk.Entry(maxSize)
+	temp.set_width_chars(width)
+	temp.set_text(text)
+	temp.set_name(name)
+	
+	if handler != None:
+		temp.connect("focus-out-event", handler)
+	
+	parent.attach(temp, gridX, gridX+sizeX, gridY, gridY+sizeY, xoptions=gtk.EXPAND if xExpand else 0, yoptions=gtk.EXPAND if yExpand else 0)
+	
+	return temp
+
+def createCheckButton(parent, text="", active=False, gridX=0, gridY=0, sizeX=1, sizeY=1, xExpand=False, yExpand=False, handler=None):
+	"""Creates a checkbox widget and adds it to a parent widget."""
+	temp = gtk.CheckButton(text if text != "" else None)
+	temp.set_active(active)
+	#temp.connect("toggled", handler)
+	
+	parent.attach(temp, gridX, gridX+sizeX, gridY, gridY+sizeY, xoptions=gtk.EXPAND if xExpand else 0, yoptions=gtk.EXPAND if yExpand else 0)
+	
+	return temp
+
+def createRadioButton(parent, group=None, text="", active=True, sensitive=True, use_underline=False, gridX=0, gridY=0, sizeX=1, sizeY=1, xPadding=0, yPadding=0, xExpand=False, yExpand=False, handler=None):
+	"""Creates a radio button widget and adds it to a parent widget."""
+	temp = gtk.RadioButton(group, text if text != "" else None)
+	temp.set_active(active)
+	temp.set_sensitive(sensitive)
+	#temp.connect("toggled", handler)
+	
+	parent.attach(temp, gridX, gridX+sizeX, gridY, gridY+sizeY, xoptions=gtk.EXPAND if xExpand else 0, yoptions=gtk.EXPAND if yExpand else 0)
+	
+	return temp
+
+def createButton(parent, text="", stock=None, name="", gridX=0, gridY=0, sizeX=1, sizeY=1, xExpand=False, yExpand=False):
+	"""Creates a button widget and adds it to a parent widget."""
+	if stock:
+		temp = gtk.Button(text, stock)
+	else:
+		temp = gtk.Button(text)
+	
+	temp.set_name(name)
+	#temp.connect("clicked", handler)
+	
+	parent.attach(temp, gridX, gridX+sizeX, gridY, gridY+sizeY, xoptions=gtk.EXPAND if xExpand else 0, yoptions=gtk.EXPAND if yExpand else 0)
+	
+	return temp
+
+def createSpinButton(parent, floattype=True, valeur=0.0, dig=0, step=1, page=10, mini=0, maxi=100, policy=gtk.UPDATE_IF_VALID, gridX=0, gridY=0, sizeX=1, sizeY=1, xExpand=False, yExpand=False):
+	"""Creates a spinbutton widget and adds it to a parent widget."""
+	
+	# typecasting
+	if floattype == True:
+		valeur=float(valeur)
+	else:
+		valeur=int(valeur)
+	
+	temp = gtk.SpinButton(digits=dig)
+	temp.set_increments(step, page)
+	temp.set_range(mini,maxi)
+	temp.set_update_policy(policy)	# gtk.UPDATE_ALWAYS | gtk.UPDATE_IF_VALID
+	temp.set_numeric(True)
+	temp.set_value(valeur)
+	
+	parent.attach(temp, gridX, gridX+sizeX, gridY, gridY+sizeY, xoptions=gtk.EXPAND if xExpand else 0, yoptions=gtk.EXPAND if yExpand else 0)
+	
+	return temp
+
+def createToggleButton(parent, text="", underline=False, gridX=0, gridY=0, sizeX=1, sizeY=1, xExpand=False, yExpand=False, xPadding=0, yPadding=0):
+	"""Creates a switch (on/off) widget and adds it to a parent widget."""
+	temp = gtk.ToggleButton(label=text, use_underline=underline)
+	
+	parent.attach(temp, gridX, gridX+sizeX, gridY, gridY+sizeY, xoptions=gtk.EXPAND if xExpand else 0, yoptions=gtk.EXPAND if yExpand else 0)
+	
+	return temp
+
+def createFontButton(parent, font, gridX=0, gridY=0, sizeX=1, sizeY=1, xExpand=False, yExpand=False, handler=None):
+	"""Creates a font button widget and adds it to a parent widget."""
+	temp = gtk.FontButton()
+	temp.set_font_name(font)
+	
+	parent.attach(temp, gridX, gridX+sizeX, gridY, gridY+sizeY, xoptions=gtk.EXPAND if xExpand else 0, yoptions=gtk.EXPAND if yExpand else 0)
+	
+	return temp
+
+def createColorButton(parent, color="#000000", useAlpha=True, name="", gridX=0, gridY=0, sizeX=1, sizeY=1, xExpand=False, yExpand=False):
+	temp = gtk.ColorButton(gtk.gdk.color_parse(color))
+	temp.set_use_alpha(useAlpha)
+	temp.set_name(name)
+	
+	parent.attach(temp, gridX, gridX+sizeX, gridY, gridY+sizeY, xoptions=gtk.EXPAND if xExpand else 0, yoptions=gtk.EXPAND if yExpand else 0)
+	
+	return temp
+
+def createFileChooserButton(parent, title="", curfile="", curdir=QDCP_DIR, folder_mode=False, width=-1, gridX=0, gridY=0, sizeX=1, sizeY=1, xExpand=False, yExpand=False, handler=None):
+	"""Creates a file chooser button widget and adds it to a parent widget"""
+	temp = gtk.FileChooserButton(title)
+	temp.set_width_chars(width)
+	temp.set_tooltip_text(temp.get_file())
+	if folder_mode:
+		temp.set_current_folder(curdir)
+		temp.set_action(gtk.FILE_CHOOSER_ACTION_SELECT_FOLDER)
+	else:
+		temp.set_filename(curfile)
+		temp.set_action(gtk.FILE_CHOOSER_ACTION_OPEN)
+	
+	parent.attach(temp, gridX, gridX+sizeX, gridY, gridY+sizeY, xoptions=gtk.EXPAND if xExpand else 0, yoptions=gtk.EXPAND if yExpand else 0)
+	return temp	
+
+def createTreeView(parent):
+	"""Creates a treeview widget and adds it to a parent widget"""
+	temp = gtk.TreeView()
+	
+	parent.attach(temp, gridX, gridX+sizeX, gridY, gridY+sizeY, xoptions=gtk.EXPAND if xExpand else 0, yoptions=gtk.EXPAND if yExpand else 0)
+
+	return temp	
+
+def createTextView(parent, fichier=CONFIG_DIR, xPolicy=gtk.POLICY_AUTOMATIC, yPolicy=gtk.POLICY_AUTOMATIC, gridX=0, gridY=0, sizeX=1, sizeY=1, xExpand=True, yExpand=True, handler=None):
+	"""Creates a textview widget and adds it to a parent widget"""
+	temp = gtk.ScrolledWindow()
+	temp.set_policy(xPolicy, yPolicy)
+
+	temp_buffer = gtk.TextBuffer()
+	temp_file = open(fichier, "r")
+	temp_buffer.insert_at_cursor(temp_file.read())
+	temp_textview = gtk.TextView(temp_buffer)
+	temp_textview.set_editable(True)
+	
+	parent.attach(temp, gridX, gridX+sizeX, gridY, gridY+sizeY, xoptions=gtk.EXPAND if xExpand else 0, yoptions=gtk.EXPAND if yExpand else 0)
+	
+	return temp
+	
+def confirmDialog(parent=None, msg="Confirmer?"):
+	"""Creates a confirmation dialog and returns the response."""
+	dialog = gtk.MessageDialog(parent, gtk.DIALOG_MODAL, gtk.MESSAGE_QUESTION, gtk.BUTTONS_YES_NO, msg)
+	dialog.show()
+	response = dialog.run()
+	dialog.destroy()
+	return response
+
+def infoDialog(parent=None, msg="QuickDCP vous informe !"):
+	"""Creates an information dialog."""
+	dialog = gtk.MessageDialog(parent, gtk.DIALOG_MODAL, gtk.MESSAGE_INFO, gtk.BUTTONS_OK, msg)
+	dialog.show()
+	dialog.run()
+	dialog.destroy()
+
+def progressDialog(parent=None, msg="Progression", action=None):
+        progressbar = gtk.ProgressBar();
+
+        dialog = gtk.Dialog(_('Copie de n fichiers'), self.shell.get_property('window'),
+                gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT, (Gtk.STOCK_OK, Gtk.ResponseType.OK))
+
+        #~ content_area = dialog.get_content_area()
+        #~ content_area.pack_start(progressbar, True, True, 0)
+#~ 
+        #~ dialog.show()
+#~ 
+        #~ total = len(self.shell.props.library_source.props.query_model)
+        #~ i = 1;
+        #~ for row in self.shell.props.library_source.props.query_model:
+            #~ entry = row[0]
+            #~ title = entry.get_string(RB.RhythmDBPropType.TITLE)
+            #~ artist = entry.get_string(RB.RhythmDBPropType.ARTIST)
+            #~ print(title + " - " + artist)
+#~ 
+            #~ self.get_lyrics_for_song(title, artist)
+            #~ progressbar.set_fraction(i/total) 
+        dialog.hide()
+        
+def warningDialog(parent=None, msg="Attention !"):
+	"""Creates an error dialog."""
+	dialog = gtk.MessageDialog(parent, gtk.DIALOG_MODAL, gtk.MESSAGE_WARNING, gtk.BUTTONS_OK, msg)
+	dialog.show()
+	dialog.run()
+	dialog.destroy()
+
+def errorDialog(parent=None, msg="Nous avons un problème !"):
+	"""Creates an error dialog."""
+	dialog = gtk.MessageDialog(parent, gtk.DIALOG_MODAL, gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, msg)
+	dialog.show()
+	dialog.run()
+	dialog.destroy()
+
+def numToHex(n):
+	"""Convert integer n in range [0, 15] to hex."""
+	try:
+		return ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"][n]
+	except:
+		return -1
+	
+_NUMERALS = '0123456789abcdefABCDEF'
+#_HEXDEC = {v: int(v, 16) for v in (x+y for x in _NUMERALS for y in _NUMERALS)}
+LOWERCASE, UPPERCASE = 'x', 'X'
+
+def rgb(triplet):
+    return _HEXDEC[triplet[0:2]], _HEXDEC[triplet[2:4]], _HEXDEC[triplet[4:6]]
+
+def triplet(rgb, lettercase=LOWERCASE):
+    return format(rgb[0]<<16 | rgb[1]<<8 | rgb[2], '06'+lettercase)
+
+    
+def rgbToHex(r, g, b):
+	"""Constructs a 6 digit hex representation of color (r, g, b)."""
+	r2 = trunc(r / 65535.0 * 255)
+	g2 = trunc(g / 65535.0 * 255)
+	b2 = trunc(b / 65535.0 * 255)
+
+	return "#%s%s%s%s%s%s" % (numToHex(r2 / 16), numToHex(r2 % 16), numToHex(g2 / 16), numToHex(g2 % 16), numToHex(b2 / 16), numToHex(b2 % 16))
+
+def trunc(n):
+	"""Truncate a floating point number, rounding up or down appropriately."""
+	c = math.fabs(math.ceil(n) - n)
+	f = math.fabs(math.floor(n) - n)
+
+	if c < f:
+		return int(math.ceil(n))
+	else:
+		return int(math.floor(n))
+
+# Direct execution of application
+if __name__ == "__main__":
+	if len(sys.argv) > 1 and sys.argv[1] == "-v":
+		print NAME, QDCP_VERSION
+		exit()
+	
+	qdcp = QdcpGUI()
+	qdcp.main()
+
+
+## EOF
