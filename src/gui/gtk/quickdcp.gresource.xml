@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/net/zanobox/quickdcp">
+    <file preprocess="xml-stripblanks">gui/gtk/qdcp-main.glade</file>
+  </gresource>
+  <gresource prefix="/net/zanobox/quickdcp">
+    <file preprocess="xml-stripblanks">gui/gtk/quickdcp_menu.ui</file>
+  </gresource>
+  <gresource prefix="/net/zanobox/quickdcp">
+    <file preprocess="xml-stripblanks">gui/gtk/qdcp-progress.glade</file>
+  </gresource>
+  <gresource prefix="/net/zanobox/quickdcp">
+    <file preprocess="xml-stripblanks">gui/gtk/qdcp-renamer.glade</file>
+  </gresource>
+</gresources>

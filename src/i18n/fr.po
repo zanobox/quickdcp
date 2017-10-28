@@ -1,0 +1,157 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR ORGANIZATION
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"POT-Creation-Date: 2015-10-29 11:21+CET\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: ENCODING\n"
+"Generated-By: pygettext.py 1.5\n"
+
+
+#: ./quickdcp/common.py:101
+msgid "grenier"
+msgstr "grenier"
+
+#: ./quickdcp/common.py:107
+msgid "Pret"
+msgstr ""
+
+#: ./quickdcp/common.py:124
+msgid "Orphan layer"
+msgstr ""
+
+#: ./quickdcp/common.py:216
+msgid "feature"
+msgstr ""
+
+#: ./quickdcp/common.py:217
+msgid "policy"
+msgstr ""
+
+#: ./quickdcp/common.py:218
+msgid "psa"
+msgstr ""
+
+#: ./quickdcp/common.py:219
+msgid "short"
+msgstr ""
+
+#: ./quickdcp/common.py:220
+msgid "trailer"
+msgstr ""
+
+#: ./quickdcp/common.py:221
+msgid "teaser"
+msgstr ""
+
+#: ./quickdcp/common.py:222
+msgid "test"
+msgstr ""
+
+#: ./quickdcp/common.py:223
+msgid "transitional"
+msgstr ""
+
+#: ./quickdcp/common.py:646 ./quickdcp/options.py:221
+msgid "QuickDCP - Preferences"
+msgstr ""
+
+#: ./quickdcp/common.py:733
+msgid "Projects"
+msgstr ""
+
+#: ./quickdcp/common.py:735
+msgid "Text"
+msgstr ""
+
+#: ./quickdcp/common.py:737
+msgid "Drawing"
+msgstr ""
+
+#: ./quickdcp/common.py:739
+msgid "Transitions"
+msgstr ""
+
+#: ./quickdcp/common.py:741
+msgid "Audio/Video"
+msgstr ""
+
+#: ./quickdcp/common.py:743
+msgid "DCP Name"
+msgstr ""
+
+#: ./quickdcp/common.py:745
+msgid "Keyboard shortcuts"
+msgstr ""
+
+#: ./quickdcp/common.py:747
+msgid "Config file"
+msgstr ""
+
+#: ./quickdcp/common.py:751
+msgid "Format"
+msgstr ""
+
+#: ./quickdcp/common.py:753
+msgid "Resolution"
+msgstr ""
+
+#: ./quickdcp/common.py:755 ./quickdcp/common.py:785
+msgid "Category"
+msgstr ""
+
+#: ./quickdcp/common.py:757
+msgid "Framerate"
+msgstr ""
+
+#: ./quickdcp/common.py:759
+msgid "Background color"
+msgstr ""
+
+#: ./quickdcp/common.py:761
+msgid "Foreground color"
+msgstr ""
+
+#: ./quickdcp/common.py:763
+msgid "Time length"
+msgstr ""
+
+#: ./quickdcp/common.py:765
+msgid "Margin"
+msgstr ""
+
+#: ./quickdcp/common.py:767
+msgid "Issuer"
+msgstr ""
+
+#: ./quickdcp/common.py:769
+msgid "Short issuer"
+msgstr ""
+
+#: ./quickdcp/common.py:791 ./quickdcp/options.py:340
+msgid "Label"
+msgstr ""
+
+#: ./quickdcp/common.py:797 ./quickdcp/options.py:346
+msgid "Accelerator"
+msgstr ""
+
+#: ./quickdcp/common.py:804 ./quickdcp/options.py:353
+msgid "Description"
+msgstr ""
+
+#: ./quickdcp/options.py:334
+msgid "Categorie"
+msgstr ""
+
+#: ./quickdcp/splash.py:133
+msgid "Loading ..."
+msgstr ""
+

@@ -1,0 +1,84 @@
+.TH QUICKDCP 1 "July 2015" "1.0.0"
+
+.SH NOM
+QuickDCP - Le couteau suisse du projectionniste moderne, en ligne de commande.
+
+.SH SYNOPSIS
+.B quickdcp-cli [options]
+
+.SH DESCRIPTION
+.br
+.P
+Ce que QuickDCP peut et ne peut pas faire en ligne de commande.
+.br
+.P
+Par défaut, quickdcp-cli va chercher des fichiers à traiter dans un répertoire dit espace
+de travail. Les fichiers image, son et video peuvent être traités chacun à sa manière,
+de façon à composer un paquet de cinéma numérique (DCP).
+
+.SH OPTIONS
+.TP
+.I -h, --help
+Affiche un message d'aide et s'arrète.
+.TP
+.I -v, --version
+Affiche le numéro de version du programme et s'arrète.
+.TP
+.I -V, --verbose
+Affiche des informations supplémentaires sur l'activité de QuickDCP durant l'éxecution.
+.TP
+.I -q, --quiet
+Désactive la sortie standard. Seules les erreurs sont affichées dans le terminal.
+.TP
+.I -D, --debug
+Affiche le maximum d'informations sur l'activivté de QuickDCP durant l'éxecution.
+.TP
+
+.I -l
+Liste les projets déjà élaborés (.qdp ou .qdx) afin d'en choisir un pour produire un DCP.
+.TP
+.I -p <nom_du_projet.qd[p|x|w]>
+Charge et traite un fichier .qdp, .qdx or .qdw kind to get the corresponding DCP.
+.TP
+.I -w <dossier>
+Fournit le chemin absolu du dossier à utiliser comme espace de travail (w pour workspace),
+où QuickDCP cherchera les fichiers utilisables, plutôt que dans l'espace de travail par défaut
+tel qu'il est défini dans le fichier de configuration.
+.TP
+.I -o <dossier>
+Fournit le chemin absolu du dossier où seront envoyés les DCP terminés, à la place de 
+celui indiqué dans le fichier de configuration.
+
+.I -c, --config
+Fournit le chemin d'un fichier de configuration à utiliser de préférence au fichier de
+configuration par défaut.
+.TP
+
+.I -i, -a, -s, -m, -p
+Ces options permettent de fournir en entrée, respectivement un fichier image, audio,
+de sous-titres, video (movie) ou un projet existant (.qdx ou .qdp).
+.TP
+
+.I -l, --list
+Choisir un projet à traiter dans la liste des projets disponibles.
+.TP
+
+.I -d
+Fournit un dossier dont tous les fichiers images qu'il contient seront traités en 
+diaporame (dans l'ordre alphabétique). En utilisant pour chaque image,
+la durée et les fondus donnés dans le fichier de configuration.
+.TP
+
+.SH FICHIERS
+Le fichier de configuration principal quickdcp.ini . 
+Sur UNIX, se trouve dans $HOME/.config/quickdcp
+
+.SH SEE ALSO
+.B Homepage:
+https://github.com/zanobox/quickdcp/
+
+.SH AUTEUR
+This manual page was written by Zanobox <zano@zanobox.net>.
+.br
+Permission is granted to copy, distribute and/or modify this document under the terms of the GNU General Public License, Version 3 or any later version published by the Free Software Foundation
+.br

@@ -1,0 +1,394 @@
+# quickdcp
+
+W I N D O W S :
+---------------
+
+[ work in progress !]
+Il est prévu de distribuer QuickDCP sous la forme d'installeurs .exe pour Windows,
+mais à l'heure qu'il est, ces paquets ne sont pas disponibles.
+Si vous souhaitez compiler la dernière version de QuickDCP vous devriez pouvoir 
+le faire dans Cygwin, après avoir installé ses dépendances (voir ci-dessous).
+
+MingW
+
+Codeblocks
+
+Syslog : http://syslog-win32.sourceforge.net
+
+M A C O S X :
+-------------
+
+[ work in progress !]
+Pour MacOSX il est également prévu de distribuer des binaires sous la forme de .dmg
+ou autre. En attendant, il devrait être possible d'installer QuickDCP à partir des
+sources, au sein de MacPorts ou Homebrew. Ou peut-être aussi de compiler directement
+depuis XCode, après avoir installé les dépendances (voir ci-dessous).
+Il n'est pas prévu d'utiliser QuickDCP sur iOS.
+
+Homebrew
+
+Pkg-config + GLib
+
+Yasm
+
+FFmpeg ( http://trac.ffmpeg.org/wiki/CompilationGuide/MacOSX )
+
+
+G N U - L I N U X :
+-------------------
+
+- Debian et dérivées
+....................
+
+a) TÉLÉCHARGER  le paquet quickdcp-x.y.z.deb sur le dépôt.
+Où, x, y et z représentent le numéro de version de quickdcp.
+
+
+b) DÉTERMINER LES DÉPENDANCES manquantes (voir la cascade des dépendances debian plus bas).
+
+- Méthode facile : 
+Ouvrir le paquet .deb avec Gdebi qui indiquera les dépendances
+manquantes s'il y en a (mais ne les installera pas à votre place).
+
+- Méthode plus traditionnelle :
+Ouvrir un terminal et passer les commandes suivantes.
+Pour vérifier la présence ou l'absence sur le système des dépendances nécessaires :
+
+	$ apt-cache policy libxslt1-dev libxmlsec1-dev libxmlsec1-openssl 
+	$ apt-cache policy jpeg-6b libpng libtiff yasm
+	
+Liste des dépendances connues de Quickdcp dans debian stretch :
+	g++ (included in 'build-essential' debian package. Not native on some systems like LinuxMint)
+	libz2-dev (compression/decompression library)
+	libssl-1.0-dev (paquet de transition en attendant que les applis soient compatibles avec openssl-1.1)
+	libssl-dev (cryptographic library must be <= 1.0 to be compatible with libasdcp. If not, the latest compatible version will be compiled statically within quickdcp)
+	 >  zlib1g-dev (dependance of libssl-dev. I know nothing about it)
+	libxslt1-dev (+deps)
+	libjpeg-dev
+	 >  libjpeg8-dev
+	 >  libjpeg-turbo8-dev
+	libtiff5-dev
+	libjbig-dev
+	libecore-imf1
+	librsvg-dev
+	libopus-dev
+	ttf-dejavu
+	
+	libxml2-dev (a vérifier)
+	libxmlsec1-dev (a vérifier)
+	
+	libgtk-3-dev (+ deps)
+	
+Dépendances optionnelles :
+	doxygen (needed for documentation builds, intended for fellow developpers)
+	libjasper-dev
+	liquidsoap (langage de streaming audio)
+		libcamomille-ocaml
+	libfreeimageplus-dev (+deps)
+	
+
+Idem pour les dépendances optionnelles :
+
+	$ apt-cache policy libopenlibm-dev libx264-dev libmp3lame-dev libfdk-aac-dev
+
+FFmpeg, qui est une dépendance essentielle de QuickDCP, n'est pas présent dans les 
+dépôts debian (c'est son fork avconv qui a été choisi et a repris la 
+commande ffmpeg, ce qui ne manque pas de préter à confusion).
+Il faut donc soit l'installer manuellement, soit laisser QuickDCP installer sa version
+embarquée. La compilation de FFmpeg peut être assez longue suivant votre machine, 
+prévoyez une heure. ( voir https://trac.ffmpeg.org/wiki/CompilationGuide )
+Cela dit, pour éviter les fréquents désagréments et confusions entre les versions de FFmpeg,
+il peut être préférable d'installer la version embarquée (qui n'est pas censée interferer avec
+d'autres versions déjà compilées auparavant).
+
+
+c) INSTALLER LES DÉPENDANCES manquantes :
+
+Vous pouvez ensuite, ou au fur-et-à-mesure, installer les dépendances manquantes (en tant que super-utilisateur) :
+	
+	# apt-get install libxslt1-dev libxmlsec1-openssl yasm
+
+
+d) INSTALLER LE PAQUET :
+
+- Soit avec Gdebi en double-cliquant sur l'icône du paquet .deb
+
+- Soit avec dpkg dans un terminal ( x.y.z sont à remplacer par la version de quickdcp 
+que vous avez téléchargée) :
+
+	$ sudo dpkg -i <path-to>/quickdcp-x.y.z.deb
+
+e) Pour désinstaller le paquet (option -r), utilisez simplement le nom du paquet :
+
+	$ sudo dpkg -r quickdcp
+	
+	
+
+C O M P I L E R  À  P A R T I R  D E S  S O U R C E S :
+-------------------------------------------------------
+
+Si vous souhaitez participer au développement de QuickDCP, ou si vous avez précisément
+besoin d'une fonctionnalité très récemment implémentée ou débuguée, 
+vous aurez besoin de compiler la dernière version publiée. 
+Voici comment procéder, selon votre système d'exploitation. 
+
+a) CMAKE
+
+Quelque soit votre système d'exploitation, 
+vous devez installer cmake s'il n'est pas déjà présent sur votre machine. 
+
+Sous GNU/linux, si la commande 
+
+	$ whereis -b cmake
+	
+ne renvoie aucun chemin, installez le via votre gestionnaire de paquets (apt, rpm, yaourt, etc.)
+
+Sous MacOSX et Windows, des installeurs sont disponibles à l'adresse 
+http://www.cmake.org/download#latest
+
+Selon votre plateforme, vous aurez sans doute besoin d'autres outils, tels qu'un compilateur,
+ou un éditeur de code. 
+Sous Mac OSX ce sera XCode, sous Windows vous pouvez éditer et compiler avec CodeBlocks, 
+ou d'autres logiciels que je ne connais pas.
+
+
+b) SOURCES
+
+Git
+
+Tarball
+
+Dans un environnement UNIX, décompressez l'archive tar.gz à l'endroit de votre choix,
+puis placez-vous dans le dossier destiné à la compilation :
+
+	$ cd <path-to-package>/build 
+	
+	$ cmake ..
+	
+	# make
+	
+	# make install
+
+La commande 'make' doit être, dans la plupart des cas, éxécutée en tant que root (ou derrière sudo)
+car elle installe des dépendances externes (ASDCP, FFmpeg, GraphicsMagick, notamment et leur
+documentation) vers le dossier '/usr/local' et ses sous-dossiers.
+Si vous configurez les sources (avec cmake) en utilisant l'option -DUSERLAND=1, l'ensemble des dépendances 
+non encore présentes sur le système, ainsi que QuickDCP seront installées dans le répertoire
+~/bin de l'utilisateur. Par exemple :
+	
+	$ cmake -DUSERLAND=1 ..
+
+L'étape de construction ('make') peut prendre un temps non-négligeable, en particulier 
+s'il est nécessaire de compiler de nombreuses dépendances. Sur des machines un peu lentes on peut prévoir au moins une heure. 
+Le processus de compilation est nettement plus long que si vous installez 
+ces dépendances via votre gestionnaire de paquets avant d'installer QuickDCP. 
+Donc choisissez cette dernière option autant que possible, d'autant plus que l'intégrité 
+globale de votre système en sera mieux garantie.
+ 
+Pour pouvoir recommencer le processus proprement et intégralement (y compris les compilations), 
+vous pouvez nettoyer les fichiers intermediaires (toujours depuis le dossier <package>/build)
+avec la commande  :
+
+	$ ../distclean.sh
+
+Il faudra peut-être rendre le script éxécutable en tapant :
+
+	$ chmod +x ../distclean.sh
+	
+Sur certains systèmes, des fichiers installés en tant que root ne pourront pas être supprimés via
+ce script (à cause de 'sudo make'). 
+	
+Pour générer un paquet debian ou autre, en fonction de l'options (ou des options) données à 
+la commande cmake, vous pouvez utiliser cpack. Avec les droits d'administrateur si vous installez
+simultanément le paquet sur votre système (modification des droits d'executions dans /usr/local/share par exemple)
+Normalement, les droits d'admin ne sont pas nécessaires pour générer un .deb :
+
+	$ cpack --config CPackConfig.cmake
+	
+	
+C O M P I L E R  D A N S  U N  I D E :
+--------------------------------------
+
+XCode
+CodeBlocks
+Borland
+MingW ?
+
+
+P R É - I N S T A L L A T I O N (D E P E N D A N C E S) :
+------------------------------------------------------
+
+QuickDCP utilise un certain nombre de bibliothèques (libraries) en C dont la plupart est disponible sur les systèmes UNIX 
+via les gestionnaires de paquets respectifs des systèmes. Lorsque ce n'est pas le cas, ou si vous n'avez pas les droits 
+suffisants pour installer des paquets, QuickDCP prévoit d'embarquer une version de ces bibliothèques, qui seront incorporées
+à l'éxécutable (librairies statiques). L'éxécutable sera plus gros et le processus d'installation nettement plus long.
+D'une manière générale, pour l'harmonie de votre système, il est toujours préférable d'installer les paquets officiels des dépots
+dès lors qu'ils sont disponibles.
+
+
+Cascade des dépendances de QuickDCP :
+....................................
+
+	----->	pkg-config, gcc, make, m4, [cmake] pour compiler
+	OR
+	----->	pkg-config, gcc, cmake
+	
+quickdcp-0.0.1 
+		|
+		+---->	asdcplib-2.5.11 : librairie statique en C++ (embarquée par QuickDCP, not in debian)
+		|			|
+		|			+---->	libexpat1 / lib64expat1 (2.1.0) pour les soustitres
+		|			|			|
+		|			|			+---->	libc6 (>= 2.4) / libc6-amd64 (>= 2.14)
+		|			|
+		|			+---->	libxmlsec1-openssl (1.2.20)
+		|						|
+		|						+---->	libssl1.0.0 (>= 1.0.0)
+		|						|
+		|						+---->	libxmlsec1 (>= 1.2.20)
+		|									|
+		|									+---->	libxslt1.1 (>= 1.1.25)
+		|									|
+		|									+---->	libxml2 (>= 2.7.4) 
+		|									|			|
+		|									|			+---->	libc6 (>= 2.15)
+		|									|			|
+		|									|			+---->	liblzma5 (>= 5.1alpha...)
+		|									|			|
+		|									|			+---->	zlib1g (>= 1:1.2.3.3)
+		|									|
+		|									+---->	libc6 (>= 2.4)
+		|
+		|
+		+---->	ImageMagick-7.0.3-4 
+		|			
+		+---->	FFmpeg-2.7.1	: librairie dynamique (pas de paquets debian)
+		|			|
+		|			+---->	yasm (1.3.0) (assembler utility, not totaly mandatory though, if ./configure --disable-yasm)
+		|			|
+		|			+---->	liblzma.so (libavcodec.a(tiff.o))
+		|			|
+		|			+---->	libass5 : rendeur de sous-titres pour ASS/SSA ( http://github.com/libass/libass )	
+		|			|
+		|			+-->>>	libopus-dev : audio, Voice over IP, etc. codec
+		|			|
+		|			+-->>>	libx264, libfdk-aac, libvorbis, libtheora, libmp3lame, libass5
+		|
+		+----> 	libopenjp2-7-dev_2.1.2-1.1_i386.deb : openjpeg-2.1 version minimum utilisable par imagemagick
+		|			|
+		|			+---->	libopenjp2-7_2.1.2-1.1_i386.deb
+		|
+		+---->	libsox-dev (14.4.1-5)	: paquet debian (ainsi que ses dépendances ci-dessous)
+		|			|
+		|			+---->	libsox-fmt-all, libsox-fmt-ao, libsox-fmt-mp3, libsox-fmt-oss, libsox-fmt-pulse
+		|
+		/---->	GTK+ 3.20
+					|
+					+---->	GLib 2.48
+					|
+					+----> 	GObject-Introspection 1.48
+					|
+					+---->	Pango 1.40
+					|
+					+---->	Gdk-Pixbuf 2.34
+					|
+					+---->	ATK 2.20
+					|
+					+---->	Cairo
+
+
+libmagickwand-6-headers ne requiert que libmagickcore-6-arch-config et libmagickcore-6-headers
+
+
+Debian et dérivées
+..................
+
+Votre gestionnaire de paquets vous proposera probablement d'installer d'autres paquets,
+les dépendances des dépendances, si nécessaire.
+
+Pour savoir si certains de ces paquets sont déjà présents sur votre ordinateur envoyez la commande 
+
+$ apt-cache policy <nom du paquet> 
+
+Si asdcp a déjà été installé par un autre programme (opendcp ou autre ?) il se trouve dans 
+/usr/lib/asdcp.a
+/usr/lib/asdcp.so
+
+Si imagemagick a été installé, libMagickWand se trouve dans
+/usr/lib/libMagickWand.so.2
+ou 
+/usr/lib/x86_64-linux-gnu/libMagickWand-6.Q16.so.2
+
+Le cas de FFmpeg :
+FFmpeg, qui permet de convertir des videos dans différents formats, n'est pas présent dans les dépots debian/ubuntu. 
+À sa place, ces distributions proposent avconv.
+Si avconv (libav) est déjà présent sur votre système, QuickDCP l'utilisera. Sinon, il est préférable
+d'installer FFmpeg, qui doit donc être compilé. Pour cela, il faudra ajouter l'option --with-ffmpeg à la 
+commande make (voir ci-dessous). Rien ne vous empèche d'installer FFmpeg si vous disposez déjà d'avconv.
+
+
+Autres GNU-Linux
+................
+RPM
+Arch, OpenSUSE, Gentoo, ...
+
+
+L I B R A I R I E S :
+---------------------
+QuickDCP utilise un certain nombre de librairies, qui sont fréquemment installées sur la plupart des systèmes.
+Il est toujours préférable de les installer avec votre gestionnaire de paquets, mais au cas où, QuickDCP contient ses
+propres versions embarquées de ces librairies et les compilera si nécessaire au sein de son exécutable (sans les installer sur le système).
+
+
+C O M P I L A T I O N :
+--------------------------------
+SUR UNIX :
+........
+Avec make, gcc, [automake ?]
+
+Imagemagick:
+Si vous êtes admin :
+#	sudo apt-get install libmagickwand-dev
+sinon, quickdcp installera sa version embarquée de MagickWand, dans votre 
+espace utilisateur (ou /usr/local/bin)
+
+En fait, le paquet source d'imagemagick contient un dossier 'wand'.
+C'est celui qui nous intéresse. Il contient son propre Makefile, et tous les headers
+
+Télécharger tar.gz ou .zip depuis github
+Extraire où l'on veut
+$	cd /ou/lon/veut/quickdcp-X.X
+$	./configure
+$	make
+$	make install
+
+L'éxécutable de QuickDCP devrait se trouver dans votre dossier /usr/local/bin
+Vous pouvez désormais supprimer les sources ainsi que quickdcp-X.X.tar.gz.
+Ouvrez un terminal et lancez la commande 
+$	quickdcp
+
+
+ON MACOSX :
+.........
+To download (and install ?) imagemagick libs on iOS, see :
+http://www.imagemagick.org/download/iOS/
+
+ON WINDOWS :
+...........
+MagickWand for windows, from the post http://www.imagemagick.org/discourse-server/viewtopic.php?t=19108 :
+"
+Download the Win32 dynamic binary version (pick Q8 or Q16) of the ImageMagick DLL installation file.
+http://studio.imagemagick.org/script/binary-releases.php#windows
+Execute it, and in the dialog make sure you select to install the headers.
+
+When you compile a program, codeblocks will need to know the following information. I use MSVC so I don't know how to set it in codeblocks but I presume you can figure that out.
+- Add the path to your include directory in the compiler - something like "C:\Program Files\ImageMagick-6.7.1-Q8\include"
+- for the linker stage, add the additional library directory C:\Program Files\ImageMagick-6.7.1-Q8\lib
+- also for the linker, add the Additional Dependencies CORE_RL_magick_.lib CORE_RL_wand_.lib
+and if you're using C++ also add CORE_RL_Magick++_.lib
+
+Pete
+"
+
+
+

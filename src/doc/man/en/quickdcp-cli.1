@@ -1,0 +1,54 @@
+.TH QUICKDCP 1 "July 2015" "1.0.0"
+
+.SH NAME
+QuickDCP - The swiss army knife of modern movie theater operator, on the command line.
+
+.SH SYNOPSIS
+.B quickdcp-cli [options]
+
+.SH DESCRIPTION
+.br
+.P
+What QuickDCP does and does not in CLI mode.
+.br
+.P
+By default, quickdcp-cli will look for files to process in a so-called workspace directory.
+Image, sound and video files can be processed each in their proper way in order to
+compose Digital Cinema Packages (DCP).
+
+.SH OPTIONS
+.TP
+.I -h, --help
+Show this help message and exit.
+.TP
+.I -v, --version
+Show program's version number and exit.
+.TP
+.I -V, --verbose
+Output verbose runtime information about what QuickDCP is doing.
+.TP
+.I -l
+List of already processed project files (.qdp or .qdx) to choose from.
+.TP
+.I -p <project.qd[p|x|w]>
+Load and process a project of the .qdp, .qdx or .qdw kind to get the corresponding DCP.
+.TP
+.I -i <directory>
+An alternative directory to scan for files to process, rather than the default
+configuration directory.
+.TP
+.I -o <directory>
+An alternative directory to output processed DCP, rather than the default
+configuration directory.
+.SH FILES
+The main configuration file is $HOME/.config/quickdcp/quickdcp.ini
+
+.SH SEE ALSO
+.B Homepage:
+https://github.com/zanobox/quickdcp/
+
+.SH AUTHOR
+This manual page was written by Zanobox <zano@zanobox.net>.
+.br
+Permission is granted to copy, distribute and/or modify this document under the terms of the GNU General Public License, Version 3 or any later version published by the Free Software Foundation
+.br

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-quickdcp">
+	<glob pattern="*.qdp"/>
+	<sub-class-of type="application/zip"/>
+	<generic-icon name="quickdcp"/>
+    <comment>QuickDCP project</comment>
+    <comment xml:lang="fr">Projet QuickDCP</comment>
+  </mime-type>
+  <mime-type type="application/x-quickdcp">
+	<glob pattern="*.qdx"/>
+	<sub-class-of type="application/xml"/>
+	<generic-icon name="quickdcp"/>
+    <comment>QuickDCP layers pile</comment>
+    <comment xml:lang="fr">Pile de calques QuickDCP</comment>
+  </mime-type>
+</mime-info>

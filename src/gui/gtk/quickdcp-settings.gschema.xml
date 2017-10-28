@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+## Ceci est le fichier de configuration de QuickDCP
+## Sa syntaxe est identique à celle de tous les fichiers '.ini':
+## des sections dont le nom est entre crochets, suivi de variales
+## auxquelles sont affectées une valeur.
+## Le caractère '#' rend tout ce qui se trouve à sa droite sur la même ligne, 
+## invisible au programme qui le lira.
+## Une variable ne se trouvant pas directement sous le nom de sa section ne sera
+## lue. Si deux valeurs différentes sont données à la même variable dans la même
+## section, la plus proche de la fin du fichier sera retenue.
+-->
+<schemalist>
+  <schema path="/net/zanobox/quickdcp/" id="net.zanobox.quickdcp">
+	<key name='automatic-updates' type='b'>
+      <default>true</default>
+       <summary>Automatically install updates</summary>
+       <description>
+         If enabled, updates will automatically be downlaoded and installed.
+         If disabled, updates will still be downloaded, but the user will be
+         asked to install them manually.
+       </description>
+     </key>  
+  </schema>
+</schemalist>
+
+ 
+
+
+# [projects]
+# Dans la section [projects] sont réunies les valeurs par défaut utilisées lors de la création d'un nouveau projet QDP.
+#
+# Les COULEURS sont exprimées par une séquence (concaténée) de 3 nombres hexadécimaux allant chacun de 0 à FFF (=4096).
+# Il s'agit de la même notation qu'en HTML par exemple et elle est également utilisée dans les principaux logiciels
+# de traitement d'image, tels que GIMP. Dans la mesure où le symbole '#' dans ce fichier est réservé aux lignes de 
+# commentaires, nous notons les couleurs sans le '#' initial habituel.
+#
+# 'framerate' — fréquence d'images par seconde, peut prendre les valeurs entières suivantes :
+# 23, 24, 25, 30, 48, 50, 60.
+# Dans le cas de la 3D, le taux sera implicitement doublé, c'est donc le taux pour chaque
+# oeil qui doit être indiqué ici.
+#
+# Si 'signature' est activé, les DCP produits seront signés avec la clef de cryptage RSA de QuickDCP (en fait celle d'OpenDCP provisoirement).
+
+[projects]
+format = Flat
+resolution = 2K
+framerate = 24
+laps = 1
+background = 884422   # (couleur RVB)
+foreground = ffffff   # (couleur RVB)
+margin = 0
+# Valeurs acceptées pour les fondus :
+# 0, 1, 2
+fondu_d = aucun
+fondu_f = aucun
+# Durée des fondus,  en secondes :
+fondulaps_d = 0.25
+fondulaps_f = 0.25
+# Couleur du cache des fondus :
+fondu_cache_color_d = 00ff00   # (couleur RVB)
+fondu_cache_color_f = aa0000   # (couleur RVB)
+# Position du centre (en %) pour le fondu iris (début et fin)
+fondu_iris_cx_d = 50.0
+fondu_iris_cy_d = 50.0
+fondu_iris_cx_f = 50.0
+fondu_iris_cy_f = 50.0
+
+
+
+# [dcpname]
+# Les champs suivants déterminent si l'élément concerné doit 
+# entrer ou non dans la composition du nom générique de DCP.
+# Par exemple :
+#   MonCarton_F_2K
+#   MonCarton_S_PSA_JA-XX_FR_51-4K-20160309_QDCP
+#
+# Category should be one of the following :
+#  TST (test),
+#  PSA (psa = public social announcement),
+#  XSN (transitional),
+#  POL (policy),
+#  TSR (teaser),
+#  ADV (advertisement),
+#  TLR (trailer),
+#  SHR (short) or
+#  FTR (feature).
+
+
+[dcpname]
+issuer = QuickDCP
+issuer_short = QDCP
+category = TST
+country_code = FR
+lang_code = FR
+subtitle_code = XX
+laboratory = ZNBX
+version = OV
+name_category = 1
+name_3D = 1
+name_format = 1
+name_langs = 1
+name_country = 1
+name_audio = 1
+name_resol = 1
+name_issuer = 1
+name_date = 1
+name_lab = 1
+name_dcptype = 1
+name_version = 1
+
+
+# [qdcp]
+#  Cette section définit une série de variables utiles au fonctionnement de QuickDCP,
+#  vous permettant d'en modifier le comportement selon vos préférences.
+
+#  Produire un DCP et ou une séquence d'aperçu
+#  Si make_dcp = no, la valeur de preview sera forcée à yes,
+#  et seule une séquence d'aperçu sera produite.
+#
+#  Set quickdcp log level : 0 = quiet, 1 = Error, 2 = warn, 3 = info, 4 = debug
+#
+#  Set opendcp log level : 0 = quiet, 1 = Error, 2 = warn, 3 = info, 4 = debug
+#
+#  Set ffmpeg log level : 
+#  -8 = quiet, 0 = panic, 8 = fatal, 16 = error, 24 = warning, 32 = info, 40 = verbose, 48 = debug
+#
+# Conversion methods : 
+# Choose a utility to convert an image into jpeg2000
+# Default is imagemagick on recent platforms (as in debian-jessie, 2015)
+# Former versions of IM use jasper whick is said to present security holes
+# openjpeg can be a good fallback, or opendcp which ships its own j2k encoders.
+# img2j2k : imagick | openjpeg | opendcp | jasper
+# Choose a utility to pack a jpeg2000 sequence into mxf
+# Default is asdcp proper, with a fallback onto opendcp when installed (which uses its own port of asdcp)
+# j2k2mxf : asdcp | opendcp
+
+
+[qdcp]
+workspace = /home/zano/Commune/Videos/QuickDCP/
+dcp_out = /home/zano/Commune/Videos/DCP/
+archives = grenier/
+## Produire un aperçu de séquence en png à l'échelle 1/4
+preview = 0
+make_dcp = 1
+autoclean = wash
+beep = 1
+threads = 1
+verbosity = 1
+loglevel = 2
+opendcp_loglevel = 0
+ffmpeg_loglevel = 0
+img2j2k = imagick
+j2k2mxf = asdcp
+signature = 0
+lang = fr
+
+
+
+[audio]
+# mix_type: Repartition | Mixage | Inversion
+mix_type = repartition
+# channels: 1=Mono | 2=Stereo | 6=5.1 | 8=7.1
+audio_format = 6
+samplerate = 48000
+encoding = 0
+
+
+
+[video]
+# vid2flat : 1920x1080 -> 1998x1080
+vid2flat = 1
+vid_framerate = inconnu
+vid_format = inconnu
+
+
+
+[shapes]
+line_width = 1
+line_style = solid
+line_caps = arrondi
+line_join = arrondi
+line_color = 999999   # (couleur RVB)
+fill_color = ff5522   # (couleur RVB)
+
+
+
+[text]
+font_desc = Comfortaa 40
+font_size = 40
+text_color = ffffff   # (couleur RVB)
+text_style = normal
+text_variant = normal
+text_align = center
+text_weight = normal
+text_stretch = normal
+interline = 20
+text_underline = none
+text_strike = 0
+text_script = latin
+text_lang = fr
+
+
+
+[interface]
+show_toolbar = 1
+show_terminal = 1
+win_x = 0
+win_y = 0
+win_w = 969
+win_h = 563
+
+##EOF

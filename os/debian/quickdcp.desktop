@@ -1,0 +1,15 @@
+[Desktop Entry]
+Version=0.1.1
+_Name=QuickDCP
+_GenericName=DCP Generator
+_X-GNOME-FullName=QuickDCP DCP Generator
+_Comment=QuickDCP generates home cooked Digital Cinema Packages
+TryExec=quickdcp
+Exec=quickdcp %U
+Icon=quickdcp
+Terminal=false
+Type=Application
+Categories=Graphism;Animation;GTK;
+StartupWMClass=QuickDCP
+StartupNotify=true
+MimeType=application/x-quickdcp;

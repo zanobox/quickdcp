@@ -1,0 +1,149 @@
+<?xml version="1.0"?>
+<interface>
+  <!-- interface-requires gtk+ 3.0 -->
+  <menu id="quickdcpmenu">
+	<submenu>
+	  <attribute name="label" translatable="yes">_File</attribute>
+		<section>
+		  <item>
+			<attribute name="label" translatable="yes">_New project</attribute>
+			<attribute name="action">win.new_project</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">_Open</attribute>
+			<attribute name="action">win.open_project</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">Open _template</attribute>
+			<attribute name="action">win.open_template</attribute>
+		  </item>
+		</section>
+		<section>
+		  <item>
+			<attribute name="label" translatable="yes">_save</attribute>
+			<attribute name="action">win.save_project</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">_Save_as</attribute>
+			<attribute name="action">win.save_project_as</attribute>
+		  </item>
+		</section>
+		<section>
+		  <item>
+			<attribute name="label" translatable="yes">_Quit</attribute>
+			<attribute name="action">app.quit</attribute>
+		  </item>
+		</section>
+	</submenu>
+	<submenu>
+	  <attribute name="label" translatable="yes">_Edit</attribute>
+		<section>
+		  <item>
+			<attribute name="label" translatable="yes">_Cartons simples</attribute>
+			<attribute name="action">win.simple_carton</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">_Convert video</attribute>
+			<attribute name="action">win.convert_video</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">_DCP visulization</attribute>
+			<attribute name="action">win.play_DCP</attribute>
+		  </item>
+		</section>
+		<section>
+		  <item>
+			<attribute name="label" translatable="yes">_Preferences</attribute>
+			<attribute name="action">win.preferences</attribute>
+		  </item>
+		</section>
+	</submenu>
+	<submenu>
+	  <attribute name="label" translatable="yes">_View</attribute>
+		<section>
+		  <item>
+			<attribute name="label" translatable="yes">Accueil</attribute>
+			<attribute name="action">win.show_intro</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">Compositor</attribute>
+			<attribute name="action">win.show_compositor</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">Audio</attribute>
+			<attribute name="action">win.show_audio</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">Sequences</attribute>
+			<attribute name="action">win.show_sequences</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">DCP</attribute>
+			<attribute name="action">win.show_dcp</attribute>
+		  </item>
+		</section>
+		<section>
+		  <item>
+			<attribute name="label" translatable="yes">Zoom in</attribute>
+			<attribute name="action">win.zoom_in</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">Zoom out</attribute>
+			<attribute name="action">win.zoom_out</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">Zoom fit</attribute>
+			<attribute name="action">win.zoom_fit</attribute>
+		  </item>
+		</section>
+		<section>
+		  <item>
+			<attribute name="label" translatable="yes">Show toolbar</attribute>
+			<attribute name="action">win.toggle_toolbar</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">Show statusbar</attribute>
+			<attribute name="action">win.toggle_statusbar</attribute>
+		  </item>
+		</section>
+	</submenu>
+	<submenu>
+	  <attribute name="label" translatable="yes">_Import</attribute>
+		<section>
+		  <item>
+			<attribute name="label" translatable="yes">Import _Qdp file</attribute>
+			<attribute name="action">app.import_qdp</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">_Export Qdp file</attribute>
+			<attribute name="action">app.export_qdp</attribute>
+		  </item>
+		</section>
+		<section>
+		  <item>
+			<attribute name="label" translatable="yes">Import _video</attribute>
+			<attribute name="action">app.import_qdp</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">Import _audio</attribute>
+			<attribute name="action">app.import_video</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">Import _subtitles</attribute>
+			<attribute name="action">app.import_subtitles</attribute>
+		  </item>
+		  <item>
+			<attribute name="label" translatable="yes">Import _DCP</attribute>
+			<attribute name="action">app.import_DCP</attribute>
+		  </item>
+		</section>
+	</submenu>
+	<submenu>
+	  <attribute name="label" translatable="yes">_Help</attribute>
+	  <item>
+		<attribute name="label" translatable="yes">_About</attribute>
+		<attribute name="action">app.about</attribute>
+	  </item>
+	</submenu>
+  </menu>
+</interface>

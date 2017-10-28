@@ -1,0 +1,110 @@
+# quickdcp
+
+P R E S E N T A T I O N :
+--------------------------------
+
+QuickDCP permet de manipuler des DCP (Digital Cinema Packages ou paquets de cinéma numérique).
+C'est à dire de créer rapidement à partir d'une image importée ce que l'on appelle un "carton" (image fixe projetée sur l'écran de cinéma avec (ou sans) fondu d'entrée et fondu de sortie).
+
+À partir de là il est facile de créer des diaporamas et même des séquences animées grâce à un système de calques d'images, de texte ou de formes géométriques 
+dont les paramètres (dimensions, position, opacité, couleur) sont modifiables le long de l'échelle de temps.
+
+QuickDCP permet également d'incorporer à vos projets des vidéos (simple conversion ou incrustation dans un projet), des pistes son (mixées selon vos besoins), 
+de traiter des séquences d'images 3D (issues de blender par exemple), ou des pistes de sous-titres.
+Il est en outre possible d'extraire des contenus de DCP existants (images, son, sous-titres), afin de les retoucher avant de les ré-empaqueter au format DCP.
+
+[ Toutes les possibilités mentionnées ci-dessus ne sont peut-être pas encore disponible dans la version actuelle de QuickDCP, mais elles sont en cours d'implémentation. ]
+
+Ce qu'il manque à QuickDCP, c'est un lecteur de DCP.
+
+
+I N S T A L L A T I O N :
+-------------------------
+
+Il est prévu de distribuer QuickDCP sous la forme de paquets pré-compilés tels que :
+
+	.deb --> Debian8, LinuxMint, Ubuntu
+	.rpm --> Fedora, RedHat
+	.dmg --> MacOS X
+	.exe --> Windows
+	
+et des paquets sources compilables :
+
+	tar.gz
+	Xcode
+	MinGW
+
+Pour installer QuickDCP à partir du code source, voyez le fichier INSTALL 
+inclus à la racine de cette distribution.
+
+
+T O D O :
+---------
+
+Beaucoup de choses à faire. Parmi lesquelles :
+
+- Harmoniser les strings en unicode
+- Internationalisation
+- Dans les filelists, ordonner les noms de fichier alphabetiquement
+- Pourchasser les fuites de mémoire
+- Utiliser le multithreading dans les traitements de séquences
+- Harmoniser le système d'erreur
+- Mettre en place le système de logs
+- Mettre en place l'option verbose
+- Harmoniser les noms de variables, fonctions, etc.
+- Compatibilité des chemins avec Windows
+- Adapter le Cmakefile pour des .deb
+- Adapter le CmakeFile pour MacOS
+- Adapter le CmakeFile pour Windows
+
+Beaucoup de possibilités aussi, de profiter des bibliothèques embarquées par QuickDCP :
+- Dolby ATMOS (asdcplib)
+- Gestion des KDM (asdcplib)
+- Lecteur de DCP (FFmpeg, intégration de VXL ?)
+- Pseudo 3D ?
+
+C O D I N G   S T A N D A R D S :
+---------------------------------
+
+    File Naming convention
+    Function & Module Naming convention
+    Variable Naming convention
+    History, Indentation, Comments
+    Readability guidelines
+    List of do's and don'ts
+    
+	-indentation : tab de 4 caractères
+	-noms de fichiers, de variables et de fonctions : foo_bar.nn foo_bar = 0 foo_bar()
+	-noms de type précédé de t_ : t_type
+	-noms d'enum en majuscules ?
+	-Retrait des déclarations de variables par rapport aux instructions
+	-Usage GNU de placer les types sur la ligne supérieure à la fonction
+	-Instructions de CMake en capitales
+
+L I C E N C E S  E T  C R É D I T S :
+-------------------------------------
+quickDCP est un logiciel libre et opensource réalisé par zanobox.net, sous licence GPL.
+Vous pouvez le copier, le modifier et le redistribuer sous un autre nom à condition de 
+conserver la même licence et d'en garder les sources ouvertes et accessibles.
+
+Certains fichiers ou portions de code ont été fortement inspirés ou adaptés d'OpenDCP,
+particulièrement l'interface avec AS_DCP, plus précisément les fichiers ascdp_intf.cpp,
+qdcp_checksum.c, qdcp_xml.c, qdcp_xml_sign.c, qdcp_xml_verify.c, et un certain nombre de
+fonctions, énumérations et structures. Avec l'harmonisation et la simplification progressives du code, 
+la ressemblance avec OpenDCP diminue petit à petit.
+
+
+Plusieurs librairies ou projets développés par de tierces parties sont integrés 
+statiquement à QuickDCP (ou sont susceptibles de l'être sur certaines plateformes non *NIX :
+
+	libasdcp, KUMU,	iniparser,
+	imagemagick, ffmpeg,
+	libopenjpeg2, xmlsec,  
+
+
+Je tiens à remercier ici tous les auteurs et contributeurs de ces logiciels, au nom de
+zanobox.net et j'éspère, des utilisateurs de QuickDCP, pour ces innombrables heures de 
+travail partagées avec le reste du monde. 
+
+Que ce soit aussi l'occasion de célèbrer l'esprit du logiciel libre et des invisibles 
+batisseurs de cathédrales numériques, qui ne connaissent ni frontières ni conflits armés.

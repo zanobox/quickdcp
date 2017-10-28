@@ -1,0 +1,85 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR ORGANIZATION
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"POT-Creation-Date: 2015-10-26 00:54+CET\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: ENCODING\n"
+"Generated-By: pygettext.py 1.5\n"
+
+
+#: ./quickdcp/__init__.py:43
+msgid "version"
+msgstr "version"
+
+#: ./quickdcp/gui.py:141
+msgid "Chargement ..."
+msgstr "Chargement ..."
+
+#: ./quickdcp/options.py:242
+msgid "QuickDCP - Preferences"
+msgstr "QuickDCP - Preferences"
+
+#: ./quickdcp/options.py:355
+msgid "Category"
+msgstr "Catégorie"
+
+#: ./quickdcp/options.py:361
+msgid "Label"
+msgstr "Étiquette"
+
+#: ./quickdcp/options.py:367
+msgid "Accelerator"
+msgstr "Raccourci clavier"
+
+#: ./quickdcp/options.py:374
+msgid "Description"
+msgstr "Description"
+
+#: ./quickdcp/utils.py:90
+msgid "Pret"
+msgstr "Pret"
+
+#: ./quickdcp/utils.py:134
+msgid "Calque orphelin"
+msgstr ""
+
+#: ./quickdcp/utils.py:226
+msgid "feature"
+msgstr ""
+
+#: ./quickdcp/utils.py:227
+msgid "policy"
+msgstr ""
+
+#: ./quickdcp/utils.py:228
+msgid "psa"
+msgstr ""
+
+#: ./quickdcp/utils.py:229
+msgid "short"
+msgstr ""
+
+#: ./quickdcp/utils.py:230
+msgid "trailer"
+msgstr ""
+
+#: ./quickdcp/utils.py:231
+msgid "teaser"
+msgstr ""
+
+#: ./quickdcp/utils.py:232
+msgid "test"
+msgstr ""
+
+#: ./quickdcp/utils.py:233
+msgid "transitional"
+msgstr ""
+
