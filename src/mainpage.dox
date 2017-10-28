@@ -1,0 +1,54 @@
+/**
+	\mainpage QuickDCP source code documentation.
+	
+	\section general_info_sec General information
+	
+	QuickDCP is a tool designed for movie theaters operators, allowing us to
+	produce Digital Cinema Packages (DCP) from external source like plain pictures,
+	audio files, video media files and even other DCPs. 
+	All that is not implemented yet. But the goal is to get ourselves a tool
+	to mix all those image, video, audio and subtitle files together and to
+	modify them according to our needs and wishes, to get our new thing
+	to feed to our theatering machines.
+	
+	\section other_apis_sec External APIs
+	
+	QuickDCP relies and makes use of external libraries, the most important of which 
+	being the following :
+	
+	- <a href="http://www.cinecert.com/asdcplib">
+	Asdcplib
+	</a> is the C++ library allowing to bake Digital Cinema Packages,
+	compliant to the latest norms (DCI and SMPTE).
+	<br/>
+	It is not doxygen — nor otherwise — documented. The mother site is at 
+	<a href="http://www.cinecert.com/asdcplib">
+		www.cinecert.com/asdcplib
+	</a>, where you can download the source for study.	
+
+	- <a href="https://www.imagemagick.org/script/magick-wand.php">
+		MagickWand
+	</a> is a C library dedicated to image manipulation.<br/>
+	QuickDCP uses a staticaly linked home baked version of ImageMagick-7.0.3-4.
+	
+	- <a href="https://www.ffmpeg.org/doxygen/3.1">
+		FFmpeg
+	</a> is a collection of C libraries committed to media treatment, including either video
+	and/or audio and/or subtitles streams.<br/>
+	QuickDCP uses a home baked version of FFmpeg 3.1.5.
+	
+	- GTK3
+	The GUI (Graphical User Interface) version of QuickDCP relies on GTK+ libraries
+	Not the soon to be deprecated Gtk2, but only Gtk3.
+	GTK stands for Gimp Tool Kit. And provides libraries for windowed applications
+	with many standard types of widgets, for graphical interface, either from mouse or keyboard.
+	
+	- Pango is a library of the GTK familly, dedicated to text rendering.
+	It is used by ImageMagick (MagickWand) and GTK+.
+	
+	
+	\section install_sec Installation
+	
+	For installation and dependencies, please see INSTALL file in source directory.
+	
+*/
